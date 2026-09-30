@@ -31,7 +31,32 @@
 
 ## 未完成的验收
 
-2026-09-30 本轮补充验证：前端 1324 项通过，类型检查通过；Windows Release 构建通过，构建后 WindowsRust 161 项通过。对用户报告的实际 Java 调用点，独立 Core 查询以及 Windows 产品的 `invokeLsp` 适配层查询均返回服务方法第 35 行；Lombok getter 查询返回字段第 20 行。后者本地集成检查耗时 17.265 秒（含会话启停）。这并未复现当前编辑器会话持续返回空结果的根因，不能作为“点击跳转已修复”的证据。诊断使用独立临时缓存，未修改用户 Java 源码；前期桥接脚本编码故障和超时实例已单独清理，不计作通过。
+### 当前 Java 索引恢复（18:46 补充）
+
+针对截图中 `ApiSystemO2oDataCoreImageController.java` 第 42 行的调用，使用
+软件实际的启动资源、workspace fingerprint 与缓存目录复现了空定义结果。
+JDTLS 此时报告 ServiceReady，但 `java.project.getAll` 返回空 Java 项目列表，
+`java.project.listSourcePaths` 也为空；包含非 Java 项目时仅有根项目。
+缓存磁盘上虽然留有模块元数据，运行中的服务并没有加载这些 Java 模块。
+独立缓存能解析同一文件、同一位置，因此此前独立 smoke 漏掉了这个故障状态。
+
+已停止应用和所属 JVM，保留旧索引备份后重新导入本机项目。重新导入识别到
+46 个项目、258 个源码根，同一调用返回服务方法第 35 行；首次完整导入及
+查询、停止合计 316.40 秒。随后使用同一缓存重新启动并重复查询，通过，
+全流程 22.96 秒。这些耗时包含语言服务启停，不能当作点击跳转延迟。
+本地原始证据为 `.artifacts/adapter-actual-cache-probe.log`（修复前失败）、
+`.artifacts/adapter-rebuilt-cache.log` 和 `.artifacts/adapter-rebuilt-cache-restart.log`
+（修复后通过）。未修改用户 Java 源码或程序实现，未据此宣称其他方法或原生
+点击流程全部验收。旧索引为何进入该状态尚未确定，保留备份供后续定位。
+诊断进程已退出，重新启动一个原有 Release 实例供使用。
+
+应用重新启动后的真实会话进一步确认：18:47 的 Maven Profiles 日志包含
+`projectCount=46`；原调用位置（零基 line 41、character 55）的
+`definition-link resolve:end` 返回 `location_count=1`，后续其他位置也返回
+非空定义。该证据来自运行中的 Release，而非独立测试进程；尚未进行全部
+Java 方法与原生跳转落点的系统验收。
+
+2026-09-30 此前验证：前端 1324 项通过，类型检查通过；Windows Release 构建通过，构建后 WindowsRust 161 项通过。独立 Core 查询以及 Windows 产品的 `invokeLsp` 适配层查询均返回服务方法第 35 行；Lombok getter 查询返回字段第 20 行。后者本地集成检查耗时 17.265 秒（含会话启停），使用的是另一个 Controller 与独立缓存，不能作为用户当前会话已恢复的证据。前期桥接脚本编码故障和超时实例已单独清理，不计作通过。
 
 原生 UI 的同尺寸、固定 DPI 截图和端到端 P95 尚未完成，不能声称与 IDEA 完全一致。目录、输入、文件打开、Git 历史及差异还需要实际操作计时。热索引 Core 搜索稀有词／无结果 P95 为 754／755ms，无索引为 1625／1651ms；索引预热成本另计，详见 `idea-performance.md`。
 
