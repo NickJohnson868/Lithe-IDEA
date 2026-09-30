@@ -34,6 +34,7 @@ export default function TextSearchFindWindow({ snapshot }: { snapshot: TextSearc
         whole_word: page.options.wholeWord,
         use_regex: page.options.useRegex,
         file_mask: page.options.fileMask,
+        include_ignored: page.options.includeIgnored ?? false,
         max_results: CONTENT_SEARCH_PAGE_SIZE,
         file_offset: page.nextOffset,
         signal: controller.signal,

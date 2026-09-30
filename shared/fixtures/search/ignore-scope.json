@@ -1,0 +1,20 @@
+{
+  "files": [
+    { "path": ".gitignore", "content": "temp/*\n!temp/kept.txt\n" },
+    { "path": ".factorypath", "content": "scopeToken\n" },
+    { "path": "src/main.txt", "content": "scopeToken\n" },
+    { "path": "src/.gitignore", "content": "private.txt\n" },
+    { "path": "src/private.txt", "content": "scopeToken\n" },
+    { "path": "temp/hidden.txt", "content": "scopeToken\n" },
+    { "path": "temp/kept.txt", "content": "scopeToken\n" }
+  ],
+  "query": "scopeToken",
+  "ignoredScopePaths": [".factorypath", "src/main.txt", "temp/kept.txt"],
+  "legacyScopePaths": [
+    ".factorypath",
+    "src/main.txt",
+    "src/private.txt",
+    "temp/hidden.txt",
+    "temp/kept.txt"
+  ]
+}

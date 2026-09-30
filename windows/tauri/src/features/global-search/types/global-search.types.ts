@@ -30,6 +30,7 @@ export interface ContentSearchOptions {
   caseSensitive: boolean;
   wholeWord: boolean;
   useRegex: boolean;
+  includeIgnored?: boolean;
   fileMask?: string;
   context?: "anywhere" | "comments" | "strings" | "except-comments" | "except-strings" | "code";
 }

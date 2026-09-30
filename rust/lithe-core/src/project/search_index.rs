@@ -7,6 +7,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
+use std::time::SystemTime;
 
 /// A workspace-local search index shared by file search, Search Everywhere and
 /// Replace in Files. The postings are file-level on purpose: the final matcher
@@ -24,6 +25,30 @@ pub(crate) struct IndexedFile {
     pub(crate) path: String,
     trigrams: Vec<u32>,
     pub(crate) symbols: Vec<IndexedSymbol>,
+    /// Only stable reads can exclude this file from a later literal scan.
+    identity: Option<IndexedFileIdentity>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+/// Filesystem identity used only to validate a cached negative candidate.
+pub(crate) struct IndexedFileIdentity {
+    byte_length: u64,
+    modified: SystemTime,
+}
+
+impl IndexedFileIdentity {
+    fn read(path: &Path) -> Option<Self> {
+        let metadata = fs::metadata(path).ok()?;
+        Some(Self {
+            byte_length: metadata.len(),
+            modified: metadata.modified().ok()?,
+        })
+    }
+
+    /// Revalidates a cached miss against the current on-disk size and timestamp.
+    pub(crate) fn matches_current_file(self, path: &Path) -> bool {
+        Self::read(path) == Some(self)
+    }
 }
 
 #[derive(Clone)]
@@ -92,6 +117,38 @@ pub(crate) fn get_or_build(root: &Path, rules: &VisibilityRules) -> Result<Share
     Ok(index)
 }
 
+/// Reuses completed postings without waiting for a cold index or watcher update.
+/// Newly discovered and changed files still go through exact current-file reads.
+pub(crate) fn cached_nonmatching_files(
+    root: &Path,
+    rules: &VisibilityRules,
+    query: &str,
+) -> HashMap<String, IndexedFileIdentity> {
+    let shared = cache()
+        .try_lock()
+        .ok()
+        .and_then(|indexes| indexes.get(&key(root, rules)).cloned());
+    let Some(shared) = shared else {
+        return HashMap::new();
+    };
+    let Ok(index) = shared.try_read() else {
+        return HashMap::new();
+    };
+    let candidates = index
+        .candidate_ids(query, false)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    index
+        .all_file_ids()
+        .into_iter()
+        .filter(|id| !candidates.contains(id))
+        .filter_map(|id| {
+            let file = index.file(id)?;
+            Some((file.path.clone(), file.identity?))
+        })
+        .collect()
+}
+
 /// Lists visible paths without building content postings or Java symbol data.
 /// Plain text search can stop reading as soon as its result budget is filled.
 pub(crate) fn visible_paths(
@@ -101,6 +158,53 @@ pub(crate) fn visible_paths(
     let mut files = Vec::new();
     collect_files(root, root, rules, &mut files)?;
     Ok(files.iter().map(|path| relative_path(path, root)).collect())
+}
+
+/// Uses ripgrep's complete ignore traversal rather than a homegrown glob parser.
+/// Rules are rebuilt per query so edits to nested ignore files are observed.
+pub(crate) fn ignored_visible_files<'a>(
+    root: &'a Path,
+    rules: &VisibilityRules,
+) -> impl Iterator<Item = Result<String, CoreError>> + 'a {
+    let rules = rules.clone();
+    let owned_root = root.to_path_buf();
+    ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .parents(false)
+        .git_global(false)
+        .require_git(false)
+        .follow_links(false)
+        .sort_by_file_path(|left, right| {
+            left.to_string_lossy()
+                .to_lowercase()
+                .cmp(&right.to_string_lossy().to_lowercase())
+                .then_with(|| left.cmp(right))
+        })
+        .filter_entry(move |entry| {
+            entry.depth() == 0
+                || (!entry.path_is_symlink()
+                    && !rules.is_hidden(
+                        &relative_path(entry.path(), &owned_root),
+                        entry.file_type().is_some_and(|kind| kind.is_dir()),
+                    ))
+        })
+        .build()
+        .filter_map(move |entry| {
+            if let Err(error) = crate::protocol::cancellation::check() {
+                return Some(Err(error));
+            }
+            match entry {
+                Ok(entry) if entry.file_type().is_some_and(|kind| kind.is_file()) => {
+                    Some(Ok(relative_path(entry.path(), root)))
+                }
+                Ok(_) => None,
+                Err(error) => Some(Err(CoreError::new(
+                    ErrorCode::Unknown,
+                    "Could not traverse project search scope",
+                )
+                .with_details(error.to_string()))),
+            }
+        })
 }
 
 /// Depth-first visible file traversal that opens each directory only on demand.
@@ -249,7 +353,13 @@ impl WorkspaceSearchIndex {
         if let Some(existing) = self.path_to_id.get(&relative).copied() {
             self.remove_id(existing);
         }
-        let (trigrams, symbols) = read_search_data(path, &relative);
+        let before = IndexedFileIdentity::read(path);
+        let (trigrams, symbols, readable) = read_search_data(path, &relative);
+        // A concurrently changed file must be re-read, never excluded using
+        // postings built from a different revision of its contents.
+        let identity = before
+            .filter(|_| readable)
+            .filter(|value| Some(*value) == IndexedFileIdentity::read(path));
         let id = self
             .free_ids
             .pop()
@@ -264,6 +374,7 @@ impl WorkspaceSearchIndex {
             path: relative.clone(),
             trigrams,
             symbols,
+            identity,
         });
         let id_index = id as usize;
         if id_index == self.files.len() {
@@ -444,15 +555,17 @@ fn sorted_children(
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let child_path = entry.path();
-            let metadata = fs::symlink_metadata(&child_path).ok()?;
-            if metadata.file_type().is_symlink() {
+            // read_dir already carries the entry type on Windows. A separate
+            // metadata syscall for every child makes cold traversal expensive.
+            let file_type = entry.file_type().ok()?;
+            if file_type.is_symlink() {
                 return None;
             }
             let relative = relative_path(&child_path, root);
-            if rules.is_hidden(&relative, metadata.is_dir()) {
+            if rules.is_hidden(&relative, file_type.is_dir()) {
                 return None;
             }
-            Some((child_path, metadata.is_dir()))
+            Some((child_path, file_type.is_dir()))
         })
         .collect::<Vec<_>>();
     children.sort_by(|left, right| {
@@ -475,9 +588,9 @@ fn sorted_children(
     Ok(children)
 }
 
-fn read_search_data(path: &Path, relative: &str) -> (Vec<u32>, Vec<IndexedSymbol>) {
+fn read_search_data(path: &Path, relative: &str) -> (Vec<u32>, Vec<IndexedSymbol>, bool) {
     let Some(text) = read_searchable_text(path) else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), false);
     };
     let trigrams = unique_trigrams(&text);
     let symbols = java_symbols(relative, &text)
@@ -489,7 +602,7 @@ fn read_search_data(path: &Path, relative: &str) -> (Vec<u32>, Vec<IndexedSymbol
             signature: symbol.signature,
         })
         .collect();
-    (trigrams, symbols)
+    (trigrams, symbols, true)
 }
 
 fn unique_trigrams(value: &str) -> Vec<u32> {

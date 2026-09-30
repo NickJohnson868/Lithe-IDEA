@@ -1977,6 +1977,7 @@ const createFileSystemStore = (workspaceId: string): StoreApi<ScopedFileSystemSt
       },
 
       toggleFolder: async (path: string) => {
+        latestTreeRevealRequestId++;
         if (!findFileInTree(get().files, path)?.isDir) return;
         const uiActions = useFileTreeStore.getStore(workspaceId).getState().actions;
         if (uiActions.isExpanded(path)) {
@@ -2008,57 +2009,13 @@ const createFileSystemStore = (workspaceId: string): StoreApi<ScopedFileSystemSt
       revealPathInTree: async (targetPath: string) => {
         const revealRequestId = ++latestTreeRevealRequestId;
         const { rootFolderPath } = get();
-        const ancestorPaths = getAncestorDirectoryPaths(targetPath, rootFolderPath);
-        const fileTreeActions = useFileTreeStore.getStore(workspaceId).getState().actions;
-        const expandedPaths = new Set(fileTreeActions.getExpandedPaths());
-        const loadedChildren = new Map<string, FileEntry[]>();
-        let nextFiles = get().files;
-        let expandedPathsChanged = false;
-
-        for (const ancestorPath of ancestorPaths) {
-          const node = findFileInTree(nextFiles, ancestorPath);
-          if (!node || !node.isDir) continue;
-
-          if (!expandedPaths.has(ancestorPath)) {
-            expandedPaths.add(ancestorPath);
-            expandedPathsChanged = true;
-          }
-
-          if (node.children === undefined) {
-            const childEntries = await readProviderDirectoryEntries(
-              ancestorPath,
-              get().rootFolderPath ?? ancestorPath,
-            );
-            if (revealRequestId !== latestTreeRevealRequestId) {
-              return;
-            }
-
-            loadedChildren.set(ancestorPath, childEntries);
-            nextFiles = updateFileInTree(nextFiles, ancestorPath, (item) => ({
-              ...item,
-              children: childEntries,
-            }));
-          }
-        }
-
-        if (loadedChildren.size > 0) {
-          set((state) => {
-            let updatedFiles = state.files;
-            for (const [ancestorPath, childEntries] of loadedChildren) {
-              updatedFiles = updateFileInTree(updatedFiles, ancestorPath, (item) => ({
-                ...item,
-                children: childEntries,
-              }));
-            }
-            if (updatedFiles !== state.files) {
-              state.files = updatedFiles;
-              state.filesVersion++;
-            }
-          });
-        }
-
-        if (expandedPathsChanged) {
-          fileTreeActions.setExpandedPaths(expandedPaths);
+        for (const ancestorPath of getAncestorDirectoryPaths(targetPath, rootFolderPath)) {
+          if (revealRequestId !== latestTreeRevealRequestId || get().rootFolderPath !== rootFolderPath) return;
+          const node = findFileInTree(get().files, ancestorPath);
+          if (!node?.isDir) continue;
+          // Reveal shares explicit expansion's request ownership and applies each
+          // ancestor progressively, rather than replacing a stale expanded set.
+          await directories.expand(ancestorPath, false);
         }
       },
 

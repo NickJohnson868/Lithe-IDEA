@@ -53,6 +53,7 @@ export interface SearchFilesRequest {
   context_lines?: number;
   signal?: AbortSignal;
   file_mask?: string;
+  include_ignored?: boolean;
 }
 
 export interface FffSearchHit {
@@ -110,6 +111,7 @@ export async function searchFilesContent(
             caseSensitive: request.case_sensitive ?? false,
             wholeWords: request.whole_word ?? false,
             regularExpression: request.use_regex ?? false,
+            respectIgnoreFiles: request.include_ignored === false,
             maxResults: nativeLimit,
             // This entry point searches content; file-name hits must not consume its budget.
             maxFileResults: 0,

@@ -53,6 +53,14 @@ export function TextSearchControls({
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
+            checked={options.includeIgnored ?? false}
+            onChange={(event) => onOptionChange("includeIgnored", event.target.checked)}
+          />
+          {t("textSearch.includeIgnored")}
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
             checked={options.fileMask !== undefined}
             onChange={(event) =>
               onOptionChange("fileMask", event.target.checked ? mask : undefined)

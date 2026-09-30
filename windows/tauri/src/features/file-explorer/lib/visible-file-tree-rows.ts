@@ -46,51 +46,62 @@ export interface FilterFileTreeEntriesOptions {
   showHiddenFiles: boolean;
 }
 
+/** Create a filter for one immutable visibility policy and immutable tree snapshots. */
+export function createFileTreeEntryFilter(options: FilterFileTreeEntriesOptions) {
+  const cache = new WeakMap<FileEntry[], FileEntry[]>();
+  const filter = (files: FileEntry[]): FileEntry[] => {
+    const cached = cache.get(files);
+    if (cached) return cached;
+    let changed = false;
+    const filteredItems: FileEntry[] = [];
+
+    for (const item of files) {
+      const ignored = options.isGitIgnored(item.path, item.isDir);
+
+      if (options.isAlwaysHidden(item.name) || options.isUserHidden(item.path, item.isDir)) {
+        changed = true;
+        continue;
+      }
+
+      if (!options.showHiddenFiles && options.isHiddenName(item.name)) {
+        changed = true;
+        continue;
+      }
+
+      if (!options.showGitignoredFiles && ignored) {
+        changed = true;
+        continue;
+      }
+
+      const filteredChildren = item.children ? filter(item.children) : undefined;
+      const childrenChanged = filteredChildren !== item.children;
+      const ignoredChanged = item.ignored !== ignored && (ignored || item.ignored !== undefined);
+
+      if (childrenChanged || ignoredChanged) {
+        changed = true;
+        filteredItems.push({
+          ...item,
+          ignored,
+          children: filteredChildren,
+        });
+        continue;
+      }
+
+      filteredItems.push(item);
+    }
+
+    const result = changed ? filteredItems : files;
+    cache.set(files, result);
+    return result;
+  };
+  return filter;
+}
+
 export function filterFileTreeEntries(
   files: FileEntry[],
   options: FilterFileTreeEntriesOptions,
 ): FileEntry[] {
-  let changed = false;
-  const filteredItems: FileEntry[] = [];
-
-  for (const item of files) {
-    const ignored = options.isGitIgnored(item.path, item.isDir);
-
-    if (options.isAlwaysHidden(item.name) || options.isUserHidden(item.path, item.isDir)) {
-      changed = true;
-      continue;
-    }
-
-    if (!options.showHiddenFiles && options.isHiddenName(item.name)) {
-      changed = true;
-      continue;
-    }
-
-    if (!options.showGitignoredFiles && ignored) {
-      changed = true;
-      continue;
-    }
-
-    const filteredChildren = item.children
-      ? filterFileTreeEntries(item.children, options)
-      : undefined;
-    const childrenChanged = filteredChildren !== item.children;
-    const ignoredChanged = item.ignored !== ignored && (ignored || item.ignored !== undefined);
-
-    if (childrenChanged || ignoredChanged) {
-      changed = true;
-      filteredItems.push({
-        ...item,
-        ignored,
-        children: filteredChildren,
-      });
-      continue;
-    }
-
-    filteredItems.push(item);
-  }
-
-  return changed ? filteredItems : files;
+  return createFileTreeEntryFilter(options)(files);
 }
 
 export function collectFileTreeSearchHits(

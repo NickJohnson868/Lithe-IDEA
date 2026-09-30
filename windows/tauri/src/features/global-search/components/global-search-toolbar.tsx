@@ -166,6 +166,14 @@ export const GlobalSearchToolbar = memo(function GlobalSearchToolbar({
       </div>
       {detailsVisible ? (
         <div className="mt-2 space-y-2">
+          <label className="flex items-center gap-2 ui-text-sm">
+            <input
+              type="checkbox"
+              checked={searchOptions.includeIgnored ?? false}
+              onChange={(event) => setSearchOption("includeIgnored", event.target.checked)}
+            />
+            {t("textSearch.includeIgnored")}
+          </label>
           <SearchReplaceRow
             value={replaceQuery}
             onChange={onReplaceQueryChange}

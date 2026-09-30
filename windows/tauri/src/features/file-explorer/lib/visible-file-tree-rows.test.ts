@@ -1,10 +1,34 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import type { FileEntry } from "@/features/file-system/types/app.types";
-import { buildVisibleFileTreeRows } from "./visible-file-tree-rows";
+import { buildVisibleFileTreeRows, createFileTreeEntryFilter } from "./visible-file-tree-rows";
 
 function directory(name: string, path: string, children: FileEntry[] = []): FileEntry {
   return { name, path, isDir: true, children };
 }
+
+test("directory updates reuse unchanged filtered branches and new rules take effect", () => {
+  const ignored = mock((path: string) => path.endsWith("hidden"));
+  const policy = {
+    isAlwaysHidden: () => false,
+    isGitIgnored: ignored,
+    isHiddenName: () => false,
+    isUserHidden: () => false,
+    showGitignoredFiles: false,
+    showHiddenFiles: true,
+  };
+  const filter = createFileTreeEntryFilter(policy);
+  const left = directory("left", "/project/left", [directory("hidden", "/project/left/hidden")]);
+  const right = directory("right", "/project/right");
+  const first = filter([left, right]);
+  ignored.mockClear();
+  const changed = directory("right", "/project/right", [directory("new", "/project/right/new")]);
+  const next = filter([left, changed]);
+  expect(next[0]?.children).toBe(first[0]?.children);
+  expect(ignored.mock.calls.map(([path]) => path)).not.toContain("/project/left/hidden");
+  expect(next[1]?.children?.[0]?.name).toBe("new");
+  const showIgnored = createFileTreeEntryFilter({ ...policy, showGitignoredFiles: true });
+  expect(showIgnored([left])[0]?.children?.[0]?.name).toBe("hidden");
+});
 
 test("compact folders preserve Maven source roots and compact packages with dots", () => {
   const root = "D:\\project";

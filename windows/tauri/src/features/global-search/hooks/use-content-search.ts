@@ -132,6 +132,7 @@ export const useContentSearch = () => {
         Number(searchOptions.caseSensitive),
         Number(searchOptions.wholeWord),
         Number(searchOptions.useRegex),
+        Number(searchOptions.includeIgnored ?? false),
         searchOptions.fileMask ?? "",
         searchOptions.context ?? "anywhere",
       ].join("\0"),
@@ -143,6 +144,7 @@ export const useContentSearch = () => {
       rootFolderPath,
       searchOptions.caseSensitive,
       searchOptions.useRegex,
+      searchOptions.includeIgnored,
       searchOptions.wholeWord,
       searchOptions.fileMask,
       searchOptions.context,
@@ -216,6 +218,7 @@ export const useContentSearch = () => {
         context_lines: CONTEXT_LINES,
         signal: nativeRequestRef.current?.signal,
         file_mask: searchOptions.fileMask,
+        include_ignored: searchOptions.includeIgnored ?? false,
       });
       return filterSearchContext(
         response,

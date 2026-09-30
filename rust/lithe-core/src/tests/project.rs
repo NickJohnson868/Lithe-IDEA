@@ -4,6 +4,83 @@ use serde_json::Value;
 use std::fs;
 
 #[test]
+fn search_ignore_scope_preserves_negation_dotfiles_and_legacy_clients() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../shared/fixtures/search/ignore-scope.json"
+    ))
+    .expect("scope fixture should decode");
+    struct ScopeFixture(std::path::PathBuf);
+    impl ScopeFixture {
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+    impl Drop for ScopeFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let root = ScopeFixture(temporary_root("search-ignore-scope"));
+    for file in fixture["files"]
+        .as_array()
+        .expect("fixture files should be an array")
+    {
+        let path = root
+            .path()
+            .join(file["path"].as_str().expect("fixture path should be text"));
+        fs::create_dir_all(path.parent().expect("file should have a parent")).unwrap();
+        fs::write(
+            path,
+            file["content"]
+                .as_str()
+                .expect("fixture content should be text"),
+        )
+        .unwrap();
+    }
+    let search_paths = |respect_ignore_files: Option<bool>| {
+        let mut payload = serde_json::json!({
+            "root": root.path(), "query": fixture["query"], "maxFileResults": 0, "maxResults": 100
+        });
+        if let Some(value) = respect_ignore_files {
+            payload["respectIgnoreFiles"] = value.into();
+        }
+        let response: Value = serde_json::from_str(&execute_json(
+            &serde_json::json!({
+                "id": "ignore-scope", "command": "workspace.search", "payload": payload
+            })
+            .to_string(),
+        ))
+        .expect("scope response should decode");
+        assert_eq!(response["ok"], true, "{response}");
+        let mut paths = response["data"]["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["path"].clone())
+            .collect::<Vec<_>>();
+        paths.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+        Value::Array(paths)
+    };
+    assert_eq!(search_paths(Some(true)), fixture["ignoredScopePaths"]);
+    assert_eq!(search_paths(Some(false)), fixture["legacyScopePaths"]);
+    assert_eq!(search_paths(None), fixture["legacyScopePaths"]);
+    fs::write(root.path().join("src/late.txt"), "before\n").unwrap();
+    let warm: Value = serde_json::from_str(&execute_json(&serde_json::json!({
+        "id": "warm-scope", "command": "workspace.searchIndex.warm", "payload": { "root": root.path() }
+    }).to_string())).unwrap();
+    assert_eq!(warm["ok"], true, "{warm}");
+    assert_eq!(search_paths(Some(true)), fixture["ignoredScopePaths"]);
+    // An external edit and new file must not inherit a cached negative match.
+    fs::write(root.path().join("src/new.txt"), "scopeToken\n").unwrap();
+    fs::write(root.path().join("src/main.txt"), "scopeToken\nscopeToken\n").unwrap();
+    fs::write(root.path().join("src/late.txt"), "scopeToken\n").unwrap();
+    assert_eq!(search_paths(Some(true)).as_array().unwrap().len(), 6);
+    // Ignore edits must affect the next query without a stale path/index cache.
+    fs::write(root.path().join("src/.gitignore"), "").unwrap();
+    assert_eq!(search_paths(Some(true)).as_array().unwrap().len(), 7);
+}
+
+#[test]
 fn workspace_snapshot_hides_nested_worktree_checkouts() {
     let root = temporary_root("snapshot-worktree");
     fs::create_dir_all(root.join("src")).expect("source directory should be creatable");

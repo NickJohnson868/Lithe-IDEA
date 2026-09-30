@@ -8,8 +8,10 @@ use crate::protocol::{
 };
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const BUILT_IN_HIDDEN_DIRECTORIES: &[&str] = &[
@@ -56,6 +58,9 @@ pub struct SearchRequest {
     pub whole_words: bool,
     #[serde(default)]
     pub regular_expression: bool,
+    /// Opt-in ignore-file filtering for workspace.search; absent/false preserves legacy scope.
+    #[serde(default)]
+    pub respect_ignore_files: bool,
     #[serde(default = "default_max_results")]
     pub max_results: usize,
     #[serde(default)]
@@ -180,6 +185,20 @@ pub fn search(request: SearchRequest) -> Result<SearchResponse, CoreError> {
         request.hidden_directory_names.clone(),
         request.hidden_file_patterns.clone(),
     );
+    if request.respect_ignore_files {
+        let candidates = search_index::ignored_visible_files(&root, &rules);
+        if request.max_file_results == Some(0) {
+            return search_with_paths(&root, &request, &query, &[], candidates);
+        }
+        let paths = candidates.collect::<Result<Vec<_>, _>>()?;
+        return search_with_paths(
+            &root,
+            &request,
+            &query,
+            &paths,
+            paths.iter().cloned().map(Ok),
+        );
+    }
     if request.max_file_results == Some(0) {
         // Content-only queries can fill their budget before visiting unrelated
         // subtrees. Preserve traversal order without allocating the full file list.
@@ -287,6 +306,15 @@ fn search_with_paths(
     } else {
         None
     };
+    let cached_misses = if !request.regular_expression && !multiline {
+        let rules = VisibilityRules::new(
+            request.hidden_directory_names.clone(),
+            request.hidden_file_patterns.clone(),
+        );
+        search_index::cached_nonmatching_files(root, &rules, query)
+    } else {
+        HashMap::new()
+    };
     let mut candidates = candidates;
     while matches.len() < limit && content_matches < content_limit {
         crate::protocol::cancellation::check()?;
@@ -296,6 +324,12 @@ fn search_with_paths(
             continue;
         }
         let file = root.join(&path);
+        if cached_misses
+            .get(&path)
+            .is_some_and(|identity| identity.matches_current_file(&file))
+        {
+            continue;
+        }
         let Some(text) = read_searchable_text(&file) else {
             continue;
         };
@@ -333,6 +367,12 @@ fn search_with_paths(
                     break;
                 }
             }
+            continue;
+        }
+        // Literal misses are common in project search. Reject an entire file
+        // once instead of allocating and checking the deadline for every line.
+        // Regex must retain line-local anchors and therefore skips this shortcut.
+        if matcher.regex.is_none() && !matcher.contains_literal(&text) {
             continue;
         }
         for (index, line) in text.split('\n').enumerate() {
@@ -608,6 +648,7 @@ pub fn write_file(request: FileWriteRequest) -> Result<FileWriteResponse, CoreEr
 }
 
 /// Effective built-in plus caller-supplied rules for excluding workspace paths.
+#[derive(Clone)]
 pub(crate) struct VisibilityRules {
     pub(crate) hidden_directories: Vec<String>,
     pub(crate) hidden_file_patterns: Vec<String>,
@@ -927,12 +968,23 @@ fn glob_matches(pattern: &str, value: &str) -> bool {
 /// Literal or regular-expression search semantics compiled for repeated matches.
 struct Matcher {
     plain_query: String,
+    /// Lowercased once per request; literal case-insensitive semantics are unchanged.
+    normalized_query: String,
     regex: Option<Regex>,
     case_sensitive: bool,
     whole_words: bool,
 }
 
 impl Matcher {
+    /// Conservative file-level filter; whole-word validation remains line-local.
+    fn contains_literal(&self, text: &str) -> bool {
+        if self.case_sensitive {
+            text.contains(self.plain_query.as_str())
+        } else {
+            text.to_lowercase().contains(self.normalized_query.as_str())
+        }
+    }
+
     fn new(
         query: &str,
         case_sensitive: bool,
@@ -954,6 +1006,7 @@ impl Matcher {
                 })?;
             Ok(Self {
                 plain_query: query.to_string(),
+                normalized_query: query.to_lowercase(),
                 regex: Some(regex),
                 case_sensitive,
                 whole_words: false,
@@ -961,6 +1014,7 @@ impl Matcher {
         } else {
             Ok(Self {
                 plain_query: query.to_string(),
+                normalized_query: query.to_lowercase(),
                 regex: None,
                 case_sensitive,
                 whole_words,
@@ -973,14 +1027,17 @@ impl Matcher {
             return regex.is_match(text);
         }
         let (haystack, needle) = if self.case_sensitive {
-            (text.to_string(), self.plain_query.clone())
+            (Cow::Borrowed(text), self.plain_query.as_str())
         } else {
-            (text.to_lowercase(), self.plain_query.to_lowercase())
+            (
+                Cow::Owned(text.to_lowercase()),
+                self.normalized_query.as_str(),
+            )
         };
         if !self.whole_words {
-            return haystack.contains(&needle);
+            return haystack.contains(needle);
         }
-        haystack.match_indices(&needle).any(|(start, _)| {
+        haystack.match_indices(needle).any(|(start, _)| {
             let end = start + needle.len();
             let before = haystack[..start].chars().next_back();
             let after = haystack[end..].chars().next();
@@ -1058,12 +1115,18 @@ pub(crate) fn java_symbols(path: &str, source: &str) -> Vec<JavaSymbol> {
     if !path.to_lowercase().ends_with(".java") {
         return Vec::new();
     }
-    let type_pattern = Regex::new(
+    // Symbol indexing revisits many Java files; compile these fixed patterns
+    // once rather than rebuilding two regex automata for every file.
+    static TYPE_PATTERN: std::sync::OnceLock<Result<Regex, regex::Error>> =
+        std::sync::OnceLock::new();
+    static METHOD_PATTERN: std::sync::OnceLock<Result<Regex, regex::Error>> =
+        std::sync::OnceLock::new();
+    let type_pattern = TYPE_PATTERN.get_or_init(|| Regex::new(
         r"(?m)^[ \t]*(?:(?:public|protected|private|abstract|final|static|sealed|non-sealed)\s+)*(class|interface|enum|record)\s+([A-Za-z_$][A-Za-z0-9_$]*)",
-    );
-    let method_pattern = Regex::new(
+    ));
+    let method_pattern = METHOD_PATTERN.get_or_init(|| Regex::new(
         r"(?m)^[ \t]*(?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)*(?:<[^>\n]+>\s+)?(?:[A-Za-z_$][A-Za-z0-9_$<>,.?\[\]]*\s+)+([A-Za-z_$][A-Za-z0-9_$]*)\s*\([^;\n{}]*\)",
-    );
+    ));
     let mut symbols = Vec::new();
     if let Ok(expression) = type_pattern {
         for captures in expression.captures_iter(source) {
@@ -1139,17 +1202,25 @@ fn safe_relative_path_string(value: &str) -> Result<String, CoreError> {
 }
 
 pub(crate) fn read_searchable_text(path: &Path) -> Option<String> {
-    let metadata = fs::metadata(path).ok()?;
+    let file = fs::File::open(path).ok()?;
+    let metadata = file.metadata().ok()?;
     if !metadata.is_file() || metadata.len() > MAX_FILE_SIZE {
         return None;
     }
-    let text = fs::read_to_string(path).ok()?;
+    // Bound the read even if the file grows after its metadata was inspected.
+    let mut text = String::with_capacity(metadata.len() as usize);
+    file.take(MAX_FILE_SIZE + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    if text.len() as u64 > MAX_FILE_SIZE {
+        return None;
+    }
     is_plain_text(&text).then_some(text)
 }
 
 pub(crate) fn is_plain_text(text: &str) -> bool {
-    text.chars().all(|character| {
-        let value = character as u32;
+    // UTF-8 continuation bytes cannot encode ASCII control characters.
+    text.bytes().all(|value| {
         value != 0 && !(value < 0x09 || (value > 0x0D && value < 0x20) || value == 0x7F)
     })
 }

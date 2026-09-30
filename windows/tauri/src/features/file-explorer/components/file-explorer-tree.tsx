@@ -21,7 +21,7 @@ import { pasteIntoExplorerDirectory } from "@/features/file-explorer/lib/paste-i
 import { JavaClipboardPasteError } from "@/features/file-explorer/lib/paste-java-class-from-clipboard";
 import {
   collectFileTreeSearchHits,
-  filterFileTreeEntries,
+  createFileTreeEntryFilter,
   filterFileTreeForFffHits,
   getGuideAncestorRows,
   type FilterFileTreeForSearchResult,
@@ -398,29 +398,33 @@ function FileExplorerTreeComponent({
     [getWorkspaceRootForPath, gitStatusDecorationLookup, rootFolderPath],
   );
 
+  const filterEntries = useMemo(
+    () =>
+      createFileTreeEntryFilter({
+        isAlwaysHidden: isAlwaysHiddenFileName,
+        isGitIgnored,
+        isHiddenName: isHiddenFileTreeName,
+        isUserHidden,
+        showGitignoredFiles: fileTreeSettings.showGitignoredFilesInFileTree,
+        showHiddenFiles: fileTreeSettings.showHiddenFilesInFileTree,
+      }),
+    [
+      isGitIgnored,
+      isUserHidden,
+      fileTreeSettings.showGitignoredFilesInFileTree,
+      fileTreeSettings.showHiddenFilesInFileTree,
+    ],
+  );
   const filteredFiles = useMemo(() => {
     const startedAt = performance.now();
-    const result = filterFileTreeEntries(files, {
-      isAlwaysHidden: isAlwaysHiddenFileName,
-      isGitIgnored,
-      isHiddenName: isHiddenFileTreeName,
-      isUserHidden,
-      showGitignoredFiles: fileTreeSettings.showGitignoredFilesInFileTree,
-      showHiddenFiles: fileTreeSettings.showHiddenFilesInFileTree,
-    });
+    const result = filterEntries(files);
     frontendTrace("info", "file-tree", "filteredFiles:computed", {
       rootItems: files.length,
       filteredRootItems: result.length,
       durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
     });
     return result;
-  }, [
-    files,
-    isGitIgnored,
-    isUserHidden,
-    fileTreeSettings.showGitignoredFilesInFileTree,
-    fileTreeSettings.showHiddenFilesInFileTree,
-  ]);
+  }, [files, filterEntries]);
 
   const { consumeRevealRequest, revealRequest } = useFileExplorerSync({
     activePath,
@@ -1174,7 +1178,9 @@ function FileExplorerTreeComponent({
                 onJavaClassFailed: (error) => {
                   if (error instanceof JavaClipboardPasteError) {
                     if (error.code === "exists") {
-                      toast.error(t("files.javaClassAlreadyExists", { name: error.fileName ?? "" }));
+                      toast.error(
+                        t("files.javaClassAlreadyExists", { name: error.fileName ?? "" }),
+                      );
                       return;
                     }
                     if (error.code === "remote") {

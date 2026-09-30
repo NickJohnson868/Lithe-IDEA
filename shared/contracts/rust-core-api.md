@@ -919,6 +919,15 @@ need separate buckets may also provide `maxFileResults` and
 still applies. Text-only requests (`maxFileResults: 0`) scan visible files
 without first constructing the Java symbol index. They preserve deterministic
 traversal order and stop reading once their result budget is filled.
+`respectIgnoreFiles` optionally applies workspace-local `.gitignore`, `.ignore`
+and `.git/info/exclude` rules, including nested rules and negation, through the
+upstream ripgrep ignore walker. It defaults to `false` for compatibility with
+existing callers. Windows project text search explicitly sets it to `true`
+unless the user selects Include ignored files. Dotfiles remain searchable;
+parent-directory and global Git ignore configuration are excluded from this
+project-scoped contract. Existing hidden-directory and hidden-file rules still
+apply. This option is specific to `workspace.search`; symbol search and
+replacement preview keep their existing scope semantics.
 `fileMask` accepts comma-separated `*` and `?` patterns against file names;
 patterns prefixed with `!` exclude matching names after positive masks are applied.
 An exclusion-only list includes every other name. Queries containing line breaks

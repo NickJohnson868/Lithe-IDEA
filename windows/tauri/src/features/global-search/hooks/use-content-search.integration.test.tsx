@@ -99,6 +99,42 @@ afterAll(() => {
 });
 
 describe("content search lifecycle", () => {
+  test("changing ignore scope searches again and preserves the query", async () => {
+    let currentSearch: SearchHook | null = null;
+    const readCurrentSearch = (): SearchHook => {
+      if (!currentSearch) throw new Error("Search probe has not rendered");
+      return currentSearch;
+    };
+    const probe = mountSearchProbe((search) => {
+      currentSearch = search;
+    });
+    try {
+      await probe.render();
+      await act(async () => {
+        readCurrentSearch().setQuery("retained");
+      });
+      await act(async () => {});
+      expect(searchFilesContent.mock.calls.length).toBe(1);
+      const firstRequest = searchFilesContent.mock.calls[0] as unknown as [
+        { include_ignored: boolean },
+      ];
+      expect(firstRequest[0].include_ignored).toBe(false);
+      await act(async () => {
+        readCurrentSearch().setSearchOption("includeIgnored", true);
+      });
+      await act(async () => {});
+      expect(searchFilesContent.mock.calls.length).toBe(2);
+      const nextRequest = searchFilesContent.mock.calls[1] as unknown as [
+        { include_ignored: boolean },
+      ];
+      expect(nextRequest[0].include_ignored).toBe(true);
+      expect(readCurrentSearch().query).toBe("retained");
+    } finally {
+      await act(async () => {
+        probe.root.unmount();
+      });
+    }
+  });
   test("retains completed results without searching again after remount", async () => {
     let currentSearch: SearchHook | null = null;
     const readCurrentSearch = (): SearchHook => {

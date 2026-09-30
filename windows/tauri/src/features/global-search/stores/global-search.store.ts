@@ -11,6 +11,7 @@ const DEFAULT_SEARCH_OPTIONS: ContentSearchOptions = {
   caseSensitive: false,
   wholeWord: false,
   useRegex: false,
+  includeIgnored: false,
 };
 
 interface GlobalSearchSessionSnapshot {
