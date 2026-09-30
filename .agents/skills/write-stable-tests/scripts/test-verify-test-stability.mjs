@@ -179,6 +179,43 @@ assert.deepEqual(
   ],
 );
 
+const isolatedBunRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-bun-isolated-"));
+try {
+  writeFileSync(path.join(isolatedBunRoot, "a.test.ts"), "");
+  writeFileSync(path.join(isolatedBunRoot, "b.test.ts"), "");
+  const reportPath = path.join(isolatedBunRoot, "isolated.json");
+  const options = { workingDirectory: isolatedBunRoot, report: reportPath, warnMs: 50, maxMs: 100, suiteTimeoutMs: 1000, testArguments: ["a.test.ts", "b.test.ts"], isolateFiles: true };
+  let currentTime = 0;
+  let calls = 0;
+  const runProcessImpl = async ({ args, timeoutMs }) => {
+    calls++;
+    assert.equal(timeoutMs, 400);
+    assert.equal(path.basename(args[1]), calls === 1 ? "a.test.ts" : "b.test.ts");
+    const junitPath = args.find((argument) => argument.startsWith("--reporter-outfile=")).split("=")[1];
+    writeFileSync(junitPath, `<testsuites><testsuite><testcase name="case-${calls}" time="0.001"/></testsuite></testsuites>`);
+    currentTime += 100;
+    return { code: 0, timedOut: false, durationMs: 100 };
+  };
+  await runBunTestsWithTiming(options, { runProcessImpl, now: () => currentTime });
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  assert.equal(report.isolation, "file-process");
+  assert.deepEqual(report.tests.map((test) => test.name), ["case-1", "case-2"]);
+  assert.ok(existsSync(reportPath.replace(".json", ".junit.xml")));
+  // The second file cannot acquire a fresh suite deadline after the first uses it.
+  currentTime = 0;
+  calls = 0;
+  await assert.rejects(runBunTestsWithTiming(options, {
+    now: () => currentTime,
+    runProcessImpl: async () => { calls++; currentTime = 1000; return { code: null, timedOut: true, durationMs: 1000 }; },
+  }), /Isolated Bun tests failed/);
+  assert.equal(calls, 1);
+  assert.ok(JSON.parse(readFileSync(reportPath, "utf8")).tests.some((test) => test.name === "Bun isolated suite timeout"));
+} finally {
+  const resolvedTemporaryRoot = path.resolve(os.tmpdir()) + path.sep;
+  assert.ok(path.resolve(isolatedBunRoot).startsWith(resolvedTemporaryRoot));
+  rmSync(isolatedBunRoot, { recursive: true, force: true });
+}
+
 const bunTimeoutRoot = mkdtempSync(path.join(os.tmpdir(), "lithe-test-stability-bun-timeout-"));
 try {
   const reportPath = path.join(bunTimeoutRoot, "bun-timeout.json");

@@ -8,7 +8,8 @@ param(
     [int]$MaxSeconds = 15,
     [ValidateRange(1, 7200)]
     [int]$SuiteTimeoutSeconds = 1200,
-    [string[]]$FrontendTestPath = @()
+    [string[]]$FrontendTestPath = @(),
+    [switch]$IsolateFrontendFiles
 )
 
 $ErrorActionPreference = "Stop"
@@ -129,9 +130,10 @@ if ($Scope -in @("All", "Frontend")) {
         "--warn-ms", $warnMilliseconds,
         "--max-ms", $maxMilliseconds,
         "--suite-timeout-ms", $suiteTimeoutMilliseconds,
-        "--report", (Join-Path $reportRoot "windows-frontend.json"),
-        "--"
-    ) + $FrontendTestPath
+        "--report", (Join-Path $reportRoot "windows-frontend.json")
+    )
+    if ($IsolateFrontendFiles) { $arguments += "--isolate-files" }
+    $arguments += @("--") + $FrontendTestPath
     & node @arguments
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }

@@ -18,6 +18,13 @@ static verifier, Swift runner, and Rust runner are Node.js-only.
 The Windows timing harness passes an explicit timeout to Bun and reads the
 JUnit duration for every executed test case.
 
+When files use `mock.module`, run the full frontend suite with
+`-Scope Frontend -IsolateFrontendFiles`. Each file receives its own Bun process,
+so module replacements cannot leak into another file. The same suite deadline
+covers all files; each test keeps its local timeout, and each file process has
+a bounded deadline. Failures are retained in the combined HTML/JUnit report.
+This does not repair or hide failures occurring inside an individual file.
+
 ## Rust
 
 - Prefer channels, barriers, and injected clocks to `thread::sleep`. Channel

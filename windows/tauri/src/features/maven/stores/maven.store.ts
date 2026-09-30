@@ -1,5 +1,5 @@
 import { createStore } from "zustand/vanilla";
-import { saveWorkspaceBeforeLaunch } from "@/features/editor/services/save-workspace-before-launch";
+import type { saveWorkspaceBeforeLaunch } from "@/features/editor/services/save-workspace-before-launch";
 import { createWorkspaceScopedStore } from "@/features/workspace/stores/create-workspace-scoped-store";
 import { workspaceRuntimeRegistry } from "@/features/workspace/runtime/workspace-runtime-registry";
 import { frontendTrace } from "@/utils/frontend-trace";
@@ -90,7 +90,12 @@ const defaultMavenStoreDependencies: MavenStoreDependencies = {
   resolveEffectiveMavenExecutable,
   resolveMavenLaunch,
   resolveJavaTestClass,
-  saveWorkspaceBeforeLaunch,
+  // Saving stays in the editor's owning workflow. Load it when launching, so
+  // constructing Maven state does not eagerly import the complete editor UI.
+  saveWorkspaceBeforeLaunch: async (workspaceId) => {
+    const editor = await import("@/features/editor/services/save-workspace-before-launch");
+    await editor.saveWorkspaceBeforeLaunch(workspaceId);
+  },
   scanMavenProject,
   startMavenProcess,
   stopMavenProcess,

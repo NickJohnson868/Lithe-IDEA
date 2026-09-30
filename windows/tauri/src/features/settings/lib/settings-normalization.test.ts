@@ -14,8 +14,12 @@ describe("default settings", () => {
     expect(getDefaultSettingsSnapshot().autoSave).toBe(true);
   });
 
-  test("shows the editor minimap by default", () => {
-    expect(getDefaultSettingsSnapshot().showMinimap).toBe(true);
+  test("uses IDEA editor defaults without a minimap", () => {
+    const settings = getDefaultSettingsSnapshot();
+    expect(settings.showMinimap).toBe(false);
+    expect(settings.fontFamily).toBe("Ubuntu Mono");
+    expect(settings.fontSize).toBe(17);
+    expect(settings.editorFontLigatures).toBe(true);
   });
 
   test("starts with IDEA-style hidden file and directory patterns", () => {
