@@ -49,7 +49,7 @@ export const useDiffData = (scheduler?: DiffRefreshScheduler): UseDiffDataReturn
     setError(null);
   }, [scopeKey]);
 
-  const rawDiffData: GitDiff | MultiFileDiff | null =
+  const rawDiffData: GitDiff | MultiFileDiff | null = useMemo(() =>
     (activeBuffer?.type === "diff" && activeBuffer.diffData) ||
     (activeBuffer?.type === "diff" && activeBuffer.content
       ? (() => {
@@ -59,7 +59,7 @@ export const useDiffData = (scheduler?: DiffRefreshScheduler): UseDiffDataReturn
             return null;
           }
         })()
-      : null);
+      : null), [activeBuffer]);
 
   const diff = rawDiffData && "file_path" in rawDiffData ? rawDiffData : null;
 

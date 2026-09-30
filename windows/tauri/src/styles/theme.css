@@ -53,6 +53,7 @@
   --color-git-added: var(--git-added);
   --color-git-deleted: var(--git-deleted);
   --color-git-untracked: var(--git-untracked);
+  --color-git-ignored: var(--git-ignored);
   --color-git-renamed: var(--git-renamed);
 
   --color-syntax-comment: var(--syntax-comment);

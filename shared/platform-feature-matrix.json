@@ -385,13 +385,14 @@
           "windows/tauri/src/features/git",
           "windows/tauri/src/features/viewer",
           "windows/tauri/src/features/git/hooks/git-diff-load-controller.test.ts",
+          "windows/tauri/src/features/editor/engines/monaco/theme.test.ts",
           "windows/tauri/src/features/git/utils/request-generation.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Git",
-      "verification": "验证新增、删除、重命名、二进制和多文件 Diff 的展示与定位。 快速切换文件和工作区、严格模式重新连接，确认迟到读取不关闭新文件；验证上一处/下一处修改导航。"
+      "verification": "验证新增、删除、重命名、二进制和多文件 Diff 的展示与定位。 快速切换文件和工作区、严格模式重新连接，确认迟到读取不关闭新文件；验证上一处/下一处修改导航。 连续刷新已有差异时保留编辑器，多个差异编辑器不重复注册同一全局主题，并验证主题更新仍生效。"
     },
     {
       "id": "git-history",
@@ -1279,6 +1280,7 @@
           "windows/tauri/src/features/file-explorer",
           "windows/tauri/src/features/sidebar",
           "windows/tauri/src/features/file-explorer/stores/file-explorer-tree.store.test.ts",
+          "windows/tauri/src/features/file-explorer/lib/file-tree-git-status.test.ts",
           "windows/tauri/vite.config.ts",
           "windows/tauri/src/features/file-system/controllers/directory-load-controller.test.ts",
           "windows/tauri/src/features/file-system/controllers/file-tree-utils.test.ts"
@@ -1287,7 +1289,7 @@
         "verificationStatus": "pending"
       },
       "owner": "Workspace",
-      "verification": "浏览目录、展开/折叠、打开资源并在文件变更后刷新树。 Windows 验证展开中收缩、空目录缓存、紧凑链、预加载最多两个并发目录，以及切换工作区后旧读取不写回。"
+      "verification": "浏览目录、展开/折叠、打开资源并在文件变更后刷新树。 Windows 验证展开中收缩、空目录缓存、紧凑链、预加载最多两个并发目录，以及切换工作区后旧读取不写回。 未跟踪备份文件不染红祖先目录，已跟踪改动的祖先显示蓝色；target 等忽略条目使用标准文字色而非整行半透明。"
     },
     {
       "id": "dependency-browser",

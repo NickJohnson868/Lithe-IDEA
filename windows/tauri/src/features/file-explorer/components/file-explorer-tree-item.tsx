@@ -225,7 +225,6 @@ function FileExplorerTreeItemComponent({
         "min-w-max",
         isDragOver && "border-2! border-dashed! border-primary! bg-primary! bg-opacity-20!",
         isDragging && "cursor-move",
-        file.ignored && "opacity-50",
         isCut && "italic opacity-40",
       )}
       leading={
@@ -244,7 +243,7 @@ function FileExplorerTreeItemComponent({
         <span
           className={cn(
             "file-tree-node-label select-none whitespace-nowrap",
-            gitStatusDecoration?.colorClassName,
+            gitStatusDecoration?.colorClassName ?? (file.ignored ? "text-git-ignored" : undefined),
           )}
         >
           {renderHighlightedLabel(displayName ?? file.name, searchQuery)}

@@ -28,7 +28,7 @@ const DiffViewer = memo((_props: DiffViewerProps) => {
     return <GitDiffEditorStack multiDiff={multiFileDiff} />;
   }
 
-  if (isLoading) {
+  if (isLoading && !diff) {
     return (
       <Empty className="h-full rounded-none bg-background">
         <EmptyDescription>

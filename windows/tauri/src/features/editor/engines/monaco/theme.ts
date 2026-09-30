@@ -162,12 +162,21 @@ function createMonacoThemeData(
   };
 }
 
+const definedThemes = new Map<string, { theme: ThemeDefinition; registryVersion: number }>();
+
 export function defineMonacoTheme(themeId: string, italicComments = false): string {
   const theme = themeRegistry.getTheme(themeId);
   if (!theme) return getThemeId(themeId);
 
   const monacoThemeId = toMonacoThemeName(theme.id, italicComments);
-  monacoEditor.defineTheme(monacoThemeId, createMonacoThemeData(theme, italicComments));
+  const registryVersion = themeRegistry.getVersion();
+  const defined = definedThemes.get(monacoThemeId);
+  // Monaco's theme service is global. Redefining its active theme for every
+  // diff file invalidates tokenization in all mounted editors.
+  if (defined?.theme !== theme || defined.registryVersion !== registryVersion) {
+    monacoEditor.defineTheme(monacoThemeId, createMonacoThemeData(theme, italicComments));
+    definedThemes.set(monacoThemeId, { theme, registryVersion });
+  }
 
   return monacoThemeId;
 }
