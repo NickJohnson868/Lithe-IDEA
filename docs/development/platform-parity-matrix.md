@@ -190,7 +190,7 @@
 | 功能组 | 能力点 | macOS | Windows | 负责人 | 验证方式 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 应用配置 | **应用、项目与运行设置**<br><sub>application-settings</sub> | ✅ 已实现<br><sub>🔍 待验证</sub><br><sub>`macos/Sources/Lithe/Views/App/SettingsView.swift`、`macos/Sources/Lithe/Views/App/ProjectRuntimeSettingsView.swift`</sub> | ✅ 已实现<br><sub>🔍 待验证</sub><br><sub>`windows/tauri/src/features/settings`、`windows/tauri/src/features/settings/lib/idea-appearance-migration.test.ts`、`windows/tauri/public/licenses/ubuntu-mono.txt`</sub> | Settings | 修改应用级和项目级设置，验证持久化、迁移、重启恢复和无效值提示。 旧默认组合迁移为 Ubuntu Mono 17 和连字；自定义主题、字体、字号保留，干净机器验证捆绑字体。 |  |
-| 应用配置 | **快捷键查看与自定义**<br><sub>keymap-customization</sub> | ✅ 已实现<br><sub>🔍 待验证</sub><br><sub>`macos/Sources/Lithe/Views/App/KeyboardShortcutSettingsView.swift`、`macos/Sources/Lithe/Models/Keymap`</sub> | 🟡 部分实现<br><sub>🔍 待验证</sub><br><sub>`windows/tauri/src/features/keymaps`、`windows/tauri/src/features/keymaps/commands/git-command-actions.ts`、`windows/tauri/src/features/keymaps/defaults/default-keymaps.git-log.test.ts`</sub> | Settings | 修改快捷键、制造冲突并恢复默认，确认命令实际执行。 JetBrains 预设核对 Commit/Push/Update/New Branch 快捷键及用户覆盖优先级。 | Windows 快捷键设置仍有占位交互，见 #718。 |
+| 应用配置 | **快捷键查看与自定义**<br><sub>keymap-customization</sub> | ✅ 已实现<br><sub>🔍 待验证</sub><br><sub>`macos/Sources/Lithe/Views/App/KeyboardShortcutSettingsView.swift`、`macos/Sources/Lithe/Models/Keymap`</sub> | 🟡 部分实现<br><sub>🔍 待验证</sub><br><sub>`windows/tauri/src/features/keymaps`、`windows/tauri/src/features/keymaps/commands/git-command-actions.ts`、`windows/tauri/src/features/keymaps/defaults/default-keymaps.git-log.test.ts`</sub> | Settings | 修改快捷键、制造冲突并恢复默认，确认命令实际执行。 IDEA 常用预设核对格式化、前后导航、定义、引用、选区、复制删除行、Git 和工具窗口快捷键；确认别名、用户覆盖优先级和输入框焦点隔离。 | Windows 快捷键设置仍有占位交互，见 #718。 |
 
 </details>
 

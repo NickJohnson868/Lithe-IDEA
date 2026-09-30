@@ -44,22 +44,19 @@ function createPresetDefinition({
   overrides?: Keybinding[];
   disabledCommands?: string[];
 }): KeybindingPresetDefinition {
-  const overrideByCommand = new Map(
-    overrides.map((binding) => [binding.command, { ...binding, source: "preset" as const }]),
-  );
+  const overrideCommands = new Set(overrides.map((binding) => binding.command));
   const disabledCommandIds = new Set(disabledCommands);
 
   return {
     label,
     description,
-    overrides: defaultPresetCommandIds
-      .filter((commandId) => !disabledCommandIds.has(commandId))
-      .map((commandId) => overrideByCommand.get(commandId) ?? defaultPresetBindings.get(commandId)!)
-      .concat(
-        overrides
-          .map((binding) => ({ ...binding, source: "preset" as const }))
-          .filter((binding) => !defaultPresetBindings.has(binding.command)),
-      ),
+    overrides: overrides.map((binding) => ({
+        ...defaultPresetBindings.get(binding.command),
+        ...binding,
+        source: "preset" as const,
+      })).concat(defaultKeymaps
+        .filter((binding) => !disabledCommandIds.has(binding.command) && !overrideCommands.has(binding.command))
+        .map((binding) => ({ ...binding, source: "preset" as const }))),
     disabledCommands,
   };
 }
@@ -83,26 +80,84 @@ export const keybindingPresetDefinitions: Record<KeybindingPreset, KeybindingPre
     ],
   }),
   jetbrains: createPresetDefinition({
-    label: "JetBrains",
-    description: "Match common JetBrains IDE shortcuts.",
+    label: "IntelliJ IDEA",
+    description: "Use common IntelliJ IDEA Windows shortcuts.",
     disabledCommands: [
       "workbench.newWindow",
+      "workbench.newTab",
       "workbench.toggleActivitySidebar",
       "workbench.toggleSidebar",
+      "file.save",
+      "file.reopenClosed",
+      "editor.copyLineUp",
+      "editor.copyLineDown",
+      "editor.insertCursorAbove",
+      "editor.insertCursorBelow",
+      "editor.inlineEdit",
+      "workbench.toggleAIChat",
+      "workbench.toggleMinimap",
+      "window.quit",
+      "window.minimize.alt",
+      "window.maximize",
+      "workbench.nextTabAlt",
+      "workbench.previousTabAlt",
+      "workbench.showThemeSelector",
+      "workbench.openKeyboardShortcuts",
+      ...Array.from({ length: 7 }, (_, index) => `editor.foldLevel${index + 1}`),
     ],
     overrides: [
       { key: "cmd+k", command: "git.commit", source: "preset" },
       { key: "cmd+shift+k", command: "git.push", source: "preset" },
       { key: "cmd+t", command: "git.update", source: "preset" },
-      { key: "cmd+alt+n", command: "git.newBranch", source: "preset" },
+      { key: "cmd+alt+n", command: "git.newBranch", when: "!editorFocus && !terminalFocus", source: "preset" },
       { key: "cmd+shift+a", command: "workbench.commandPalette", source: "preset" },
       { key: "cmd+shift+n", command: "file.quickOpen", source: "preset" },
-      { key: "cmd+l", command: "editor.goToLine", source: "preset" },
-      { key: "cmd+1", command: "workbench.showFileExplorer", source: "preset" },
-      { key: "cmd+9", command: "workbench.showSourceControl", source: "preset" },
-      { key: "cmd+b", command: "editor.goToReferences", source: "preset" },
+      { key: "cmd+e", command: "file.quickOpen", source: "preset" },
+      { key: "cmd+g", command: "editor.goToLine", source: "preset" },
+      { key: "alt+1", command: "workbench.showFileExplorer", source: "preset" },
+      { key: "alt+0", command: "workbench.showSourceControl", source: "preset" },
+      { key: "cmd+b", command: "editor.goToDefinition", source: "preset" },
+      { key: "cmd+alt+b", command: "editor.goToImplementation", source: "preset" },
+      { key: "cmd+shift+b", command: "editor.goToTypeDefinition", when: "editorFocus", source: "preset" },
+      { key: "cmd+u", command: "editor.goToSuperMethod", when: "editorFocus", source: "preset" },
       { key: "alt+F7", command: "editor.goToReferences", source: "preset" },
-      { key: "cmd+e", command: "file.reopenClosed", source: "preset" },
+      { key: "cmd+alt+F7", command: "editor.goToReferences", source: "preset" },
+      { key: "shift+F6", command: "editor.renameSymbol", when: "editorFocus", source: "preset" },
+      { key: "cmd+F12", command: "editor.showOutline", when: "editorFocus", source: "preset" },
+      { key: "alt+7", command: "workbench.showOutline", source: "preset" },
+      { key: "cmd+alt+s", command: "workbench.openSettings", source: "preset" },
+      { key: "cmd+s", command: "file.saveAll", when: "!terminalFocus", source: "preset" },
+      { key: "cmd+F4", command: "file.close", source: "preset" },
+      { key: "cmd+w", command: "editor.expandSelection", source: "preset" },
+      { key: "cmd+shift+w", command: "editor.shrinkSelection", source: "preset" },
+      { key: "cmd+d", command: "editor.duplicateLine", when: "editorFocus", source: "preset" },
+      { key: "cmd+y", command: "editor.deleteLine", source: "preset" },
+      { key: "cmd+shift+z", command: "editor.redo", source: "preset" },
+      { key: "alt+j", command: "editor.selectNextOccurrence", source: "preset" },
+      { key: "cmd+alt+shift+j", command: "editor.selectAllOccurrences", source: "preset" },
+      { key: "alt+shift+g", command: "editor.insertCursorsAtLineEnds", source: "preset" },
+      { key: "alt+shift+up", command: "editor.moveLineUp", source: "preset" },
+      { key: "alt+shift+down", command: "editor.moveLineDown", source: "preset" },
+      { key: "cmd+alt+l", command: "editor.formatDocument", source: "preset" },
+      { key: "cmd+p", command: "editor.triggerParameterHints", source: "preset" },
+      { key: "cmd+q", command: "editor.showHover", source: "preset" },
+      { key: "alt+enter", command: "editor.quickFix", source: "preset" },
+      { key: "cmd+r", command: "workbench.showFindReplace", source: "preset" },
+      { key: "cmd+shift+m", command: "editor.goToBracket", source: "preset" },
+      { key: "alt+right", command: "workbench.nextTab", source: "preset" },
+      { key: "alt+left", command: "workbench.previousTab", source: "preset" },
+      { key: "alt+F12", command: "workbench.toggleTerminal", source: "preset" },
+      { key: "alt+4", command: "workbench.toggleRun", source: "preset" },
+      { key: "alt+5", command: "workbench.showDebugger", source: "preset" },
+      { key: "alt+6", command: "workbench.toggleDiagnostics", source: "preset" },
+      { key: "ctrl+F8", command: "debug.toggleBreakpoint", when: "editorFocus", source: "preset" },
+      { key: "shift+F9", command: "debug.start", source: "preset" },
+      { key: "ctrl+F2", command: "debug.stop", source: "preset" },
+      { key: "shift+F10", command: "run.runContextConfiguration", source: "preset" },
+      { key: "ctrl+shift+F10", command: "run.runContextConfiguration", source: "preset" },
+      { key: "ctrl+alt+F11", command: "window.toggleFullscreen", source: "preset" },
+      { key: "cmd+shift+-", command: "editor.foldAll", source: "preset" },
+      { key: "cmd+shift+=", command: "editor.unfoldAll", source: "preset" },
     ],
   }),
   sublime: createPresetDefinition({

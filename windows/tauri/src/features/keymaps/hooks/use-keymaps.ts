@@ -168,14 +168,14 @@ export function useKeymaps() {
         return;
       }
 
-      if (isCloseWindowShortcut(e)) {
+      if (settings.keybindingPreset !== "jetbrains" && isCloseWindowShortcut(e)) {
         e.preventDefault();
         e.stopPropagation();
         keymapRegistry.executeCommand("workbench.closeWindow");
         return;
       }
 
-      if (isCloseTabShortcut(e)) {
+      if (settings.keybindingPreset !== "jetbrains" && isCloseTabShortcut(e)) {
         lastCloseTabShortcutAtRef.current = Date.now();
         e.preventDefault();
         e.stopPropagation();

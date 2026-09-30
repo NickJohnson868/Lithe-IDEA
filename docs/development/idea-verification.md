@@ -21,6 +21,32 @@
 
 ## 自动验证
 
+### 常用 IDEA 快捷键（2026-09-30）
+
+Windows 新配置默认选用 IntelliJ IDEA 预设，已有配置保留选择；本机已切换到该预设。
+键位依据 [IDEA Windows 默认快捷键](https://www.jetbrains.com/help/idea/reference-keymap-win-default.html)，复用已有命令。用户自定义绑定仍优先。
+
+| 操作 | 快捷键 |
+| --- | --- |
+| 格式化文件 | Ctrl+Alt+L |
+| 后退／前进 | Ctrl+Alt+←／→ |
+| 定义／实现 | Ctrl+B／Ctrl+Alt+B |
+| 查找引用／重命名 | Alt+F7／Shift+F6 |
+| 复制行／删除行 | Ctrl+D／Ctrl+Y |
+| 扩大／缩小选区 | Ctrl+W／Ctrl+Shift+W |
+| 行注释 | Ctrl+/ |
+| 参数提示／快速修复 | Ctrl+P／Alt+Enter |
+| 文件搜索／最近文件入口 | Ctrl+Shift+N／Ctrl+E |
+| 当前文件替换 | Ctrl+R |
+| 项目／终端 | Alt+1／Alt+F12 |
+| Commit／Push／Update | Ctrl+K／Ctrl+Shift+K／Ctrl+T |
+| 关闭文件 | Ctrl+F4 |
+
+最近文件入口使用现有文件选择器；未新增全项目替换等未实现能力。自动测试验证
+常用键只触发一次、别名保留、Ctrl+W 不再关闭文件、普通输入框编辑键不被劫持。
+本次前端 1326 项通过，类型检查通过；Windows Release 构建通过，构建后
+WindowsRust 161 项通过。原生逐键人工验收未执行。
+
 前端使用固定 Bun 1.3.12：
 
 `./.agents/skills/write-stable-tests/scripts/test-stability-windows.ps1 -Scope Frontend -IsolateFrontendFiles -SuiteTimeoutSeconds 300`

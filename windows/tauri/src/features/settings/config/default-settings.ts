@@ -142,7 +142,7 @@ export const defaultSettings: Settings = {
   showGitHubIssues: true,
   showGitHubActions: true,
   // Keyboard
-  keybindingPreset: "none",
+  keybindingPreset: "jetbrains",
   vimMode: false,
   vimRelativeLineNumbers: false,
   // Language

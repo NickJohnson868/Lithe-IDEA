@@ -1453,7 +1453,7 @@
         "verificationStatus": "pending"
       },
       "owner": "Settings",
-      "verification": "修改快捷键、制造冲突并恢复默认，确认命令实际执行。 JetBrains 预设核对 Commit/Push/Update/New Branch 快捷键及用户覆盖优先级。",
+      "verification": "修改快捷键、制造冲突并恢复默认，确认命令实际执行。 IDEA 常用预设核对格式化、前后导航、定义、引用、选区、复制删除行、Git 和工具窗口快捷键；确认别名、用户覆盖优先级和输入框焦点隔离。",
       "notes": "Windows 快捷键设置仍有占位交互，见 #718。"
     },
     {

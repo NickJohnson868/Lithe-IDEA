@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { installHappyDom } from "@/test-utils/happy-dom";
 
 let nativeMenuBar = false;
+let keybindingPreset: "none" | "jetbrains" = "none";
 
 mock.module("@tauri-apps/plugin-os", () => ({
   arch: () => "x86_64",
@@ -20,7 +21,7 @@ mock.module("@/features/settings/stores/settings.store", () => ({
       settings: {
         vimMode: false,
         nativeMenuBar,
-        keybindingPreset: "none",
+        keybindingPreset,
       },
     }),
   },
@@ -58,6 +59,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   nativeMenuBar = false;
+  keybindingPreset = "none";
   keymapRegistry.clear();
   useKeymapStore.getState().actions.resetToDefaults();
   useKeymapStore.getState().actions.setContexts({
@@ -76,6 +78,67 @@ afterAll(async () => {
 });
 
 describe("keymap input routing", () => {
+  test("IDEA common shortcuts dispatch once without legacy close, redo or chord interception", async () => {
+    keybindingPreset = "jetbrains";
+    const executed: string[] = [];
+    const cases: [string, KeyboardEventInit][] = [
+      ["editor.formatDocument", { key: "l", ctrlKey: true, altKey: true }],
+      ["navigation.goBack", { key: "ArrowLeft", ctrlKey: true, altKey: true }],
+      ["navigation.goForward", { key: "ArrowRight", ctrlKey: true, altKey: true }],
+      ["editor.goToDefinition", { key: "b", ctrlKey: true }],
+      ["editor.goToImplementation", { key: "b", ctrlKey: true, altKey: true }],
+      ["editor.goToReferences", { key: "F7", altKey: true }],
+      ["editor.goToReferences", { key: "F7", altKey: true, ctrlKey: true }],
+      ["editor.expandSelection", { key: "w", ctrlKey: true }],
+      ["editor.shrinkSelection", { key: "w", ctrlKey: true, shiftKey: true }],
+      ["editor.duplicateLine", { key: "d", ctrlKey: true }],
+      ["editor.deleteLine", { key: "y", ctrlKey: true }],
+      ["editor.triggerParameterHints", { key: "p", ctrlKey: true }],
+      ["editor.quickFix", { key: "Enter", altKey: true }],
+      ["editor.renameSymbol", { key: "F6", shiftKey: true }],
+      ["file.quickOpen", { key: "e", ctrlKey: true }],
+      ["file.quickOpen", { key: "n", ctrlKey: true, shiftKey: true }],
+      ["git.commit", { key: "k", ctrlKey: true }],
+      ["git.update", { key: "t", ctrlKey: true }],
+      ["file.saveAll", { key: "s", ctrlKey: true }],
+      ["file.close", { key: "F4", ctrlKey: true }],
+    ];
+    for (const id of new Set([...cases.map(([id]) => id), "workbench.closeWindow", "editor.redo"])) {
+      keymapRegistry.registerCommand({ id, title: id, execute: () => { executed.push(id); } });
+    }
+    registerDefaultKeymaps();
+    const monaco = document.createElement("div");
+    monaco.className = "monaco-editor";
+    const input = document.createElement("textarea");
+    input.className = "inputarea";
+    monaco.append(input);
+    document.body.append(monaco);
+    input.focus();
+    for (const [expected, init] of cases) {
+      const before = executed.length;
+      const event = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+      await act(async () => { input.dispatchEvent(event); });
+      expect({ command: expected, prevented: event.defaultPrevented }).toEqual({ command: expected, prevented: true });
+      expect(executed.slice(before)).toEqual([expected]);
+    }
+  });
+
+  test("IDEA editing keys leave settings inputs alone", async () => {
+    keybindingPreset = "jetbrains";
+    const duplicate = mock(() => undefined);
+    keymapRegistry.registerCommand({ id: "editor.duplicateLine", title: "Duplicate", execute: duplicate });
+    registerDefaultKeymaps();
+    const input = document.createElement("input");
+    document.body.append(input);
+    try {
+      input.focus();
+      const event = new KeyboardEvent("keydown", { key: "d", ctrlKey: true, bubbles: true, cancelable: true });
+      await act(async () => { input.dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(false);
+      expect(duplicate).not.toHaveBeenCalled();
+    } finally { input.remove(); }
+  });
+
   test("routes Ctrl+Alt+L and the existing Shift+Alt+F alias to document formatting", async () => {
     const formatDocument = mock(() => undefined);
     keymapRegistry.registerCommand({

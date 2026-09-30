@@ -14,19 +14,14 @@ function getBaseKeybindingsForPreset(
 ): Keybinding[] {
   const { overrides, disabledCommands } = getKeybindingPresetDefinition(preset);
   const disabledCommandIds = new Set(disabledCommands);
-  const overrideByCommand = new Map(overrides.map((binding) => [binding.command, binding]));
-
-  const baseKeybindings = registryKeybindings
-    .filter((binding) => !disabledCommandIds.has(binding.command))
-    .map((binding) => overrideByCommand.get(binding.command) ?? binding);
-
-  for (const override of overrides) {
-    if (!baseKeybindings.some((binding) => binding.command === override.command)) {
-      baseKeybindings.push(override);
-    }
-  }
-
-  return baseKeybindings;
+  const overriddenCommands = new Set(overrides.map((binding) => binding.command));
+  // Keep every alias and context, and give the selected preset precedence over
+  // inherited shortcuts that happen to use the same key.
+  return [
+    ...overrides,
+    ...registryKeybindings.filter((binding) =>
+      !disabledCommandIds.has(binding.command) && !overriddenCommands.has(binding.command)),
+  ];
 }
 
 export function getEffectiveKeybindings({
