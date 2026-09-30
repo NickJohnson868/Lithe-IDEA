@@ -18,6 +18,28 @@
 
 已读取配置：编辑器 Islands Dark、Ubuntu Mono 17、连字开启。UI 字体、窗口大小、DPI、面板比例需要在参考截图中固定，不能从编辑器字体推断 UI 字体。
 
+### Java 标准颜色核对
+
+2026-09-30 核对 Community 最新提交 `0ce5cd8fcd867efdce458be50621cefbdb4bb37c` 的 `IslandSchemeDark.xml`，其父方案为 Darcula，再继承 Default。不能只查 Darcula 或仅按截图取色。
+
+| IDEA 角色 | Islands Dark 色值 | Lithe 角色 |
+| --- | --- | --- |
+| DEFAULT_CLASS_REFERENCE | #BCBEC4 | type／class |
+| DEFAULT_INSTANCE_FIELD | #C77DBB | property |
+| DEFAULT_STATIC_FIELD | #C77DBB，斜体 | property.static |
+| DEFAULT_INSTANCE_METHOD | #57AAF7 | method |
+| DEFAULT_STATIC_METHOD | #57AAF7，斜体 | method.static |
+| DEFAULT_METADATA | #B3AE60 | attribute（Java annotation） |
+| DEFAULT_KEYWORD | #CF8E6D | keyword |
+| DEFAULT_STRING | #6AAB73 | string |
+| DEFAULT_NUMBER | #2AACB8 | number |
+| DEFAULT_LINE_COMMENT | #7A7E85 | comment |
+| DEFAULT_DOC_COMMENT | #5F826B | comment.documentation |
+
+Java 类名使用灰白色是默认方案的行为。字段、方法等必须由 JDTLS 识别，再映射颜色；不能用词法规则把所有标识符染成同一种颜色。服务器语义 token 请求和刷新通知已接通，基础角色色值已核对；Javadoc 标签、注解属性、特殊静态调用及完整截图仍需要独立验收。
+
+来源：[Islands Dark](https://github.com/JetBrains/intellij-community/blob/0ce5cd8fcd867efdce458be50621cefbdb4bb37c/platform/platform-resources/src/themes/islands/IslandSchemeDark.xml)、[继承的默认方案](https://github.com/JetBrains/intellij-community/blob/0ce5cd8fcd867efdce458be50621cefbdb4bb37c/platform/platform-resources/src/DefaultColorSchemesManager.xml)。
+
 每个现有能力以 `shared/platform-feature-matrix.json` 为清单入口，检查正常、悬停、选中、失焦、加载、错误六种适用状态。视觉检查覆盖编辑器、项目目录、标签、工具窗口、菜单、弹窗、设置、终端、运行、AI 和 GitHub 面板。IDEA 没有直接对应界面的能力沿用统一视觉规范。
 
 Git 检查顺序：顶部分支菜单 → Commit 工具窗口 → 双栏差异 → 提交历史及版本比较。包含键盘导航、快捷键、当前分支、跟踪关系、领先落后、最近分支、局部提交、冲突、重命名、二进制和多仓库状态。
