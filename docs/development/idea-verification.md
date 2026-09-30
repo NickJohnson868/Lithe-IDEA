@@ -22,7 +22,7 @@
 
 `./.agents/skills/write-stable-tests/scripts/test-stability-windows.ps1 -Scope Frontend -IsolateFrontendFiles -SuiteTimeoutSeconds 300`
 
-前端最新回归 1320 项全部通过，公共编辑器此前另有 14 项通过；Java 语义请求、真实语法着色、模块模型与定义跳转均有逐测试报告。逐测试报告保存在本地 `.artifacts/test-stability/windows-frontend.json`、JUnit 与 `index.html`。本次真实 JDTLS 物理与反编译导航 smoke 通过，耗时约 19.8 秒，使用独立临时项目和 120 秒进程截止时间，未改动用户项目。Windows Rust 此前标准范围 215 项通过；Core 搜索／语言／项目重点范围 53 项通过，Git 部分提交／暂存保留／失败恢复等重点范围 16 项通过。完整 Core 运行此前出现本地提交删除测试取消，不能称全部 Core 测试通过。
+前端最新回归 1320 项全部通过，公共编辑器此前另有 14 项通过；Java 语义请求、真实语法着色、模块模型与定义跳转均有逐测试报告。逐测试报告保存在本地 `.artifacts/test-stability/windows-frontend.json`、JUnit 与 `index.html`。本次真实 JDTLS 物理与反编译导航 smoke 通过，耗时约 19.8 秒，使用独立临时项目和 120 秒进程截止时间，未改动用户项目。本次标准 WindowsRust timing 范围 161 项全部通过，最慢用例 570ms；报告为 `windows-rust.json`。Core 此前搜索／语言／项目重点范围 53 项通过，Git 部分提交／暂存保留／失败恢复等重点范围 16 项通过。完整 Core 运行此前出现本地提交删除测试取消，不能称全部 Core 测试通过。
 
 资源复用测试、测试 harness 自测、Agent Notes 校验、功能矩阵生成校验、Rust fmt 与 missing_docs Rustdoc 检查通过。Windows Release 通过标准构建入口验证；linker warning 保留在本地构建日志。
 
