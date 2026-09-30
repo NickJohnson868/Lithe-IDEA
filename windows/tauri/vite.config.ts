@@ -20,10 +20,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@lithe/v0": path.resolve(__dirname, "../../Plugins/win/Official/V0Support"),
+      "@tauri-apps/plugin-http": path.resolve(__dirname, "./node_modules/@tauri-apps/plugin-http"),
       // Consume live shared sources; Bun's local file dependency may retain an older copy.
       "@lithe/editor": path.resolve(__dirname, "../../frontend/editor/src"),
     },
-    dedupe: ["react", "react-dom", "monaco-editor"],
+    // Keep package export conditions intact: a filesystem alias selects Zustand's
+    // CommonJS middleware and creates a second Immer instance without MapSet.
+    dedupe: ["react", "react-dom", "monaco-editor", "zustand", "immer"],
   },
   test: {
     testTimeout: 10_000,

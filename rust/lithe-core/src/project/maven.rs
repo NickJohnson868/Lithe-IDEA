@@ -50,7 +50,9 @@ pub struct MavenTestResultsRequest {
 const MAVEN_CONTEXT_VERSION: u32 = 1;
 const MAVEN_DEPENDENCY_PLUGIN_GOAL: &str =
     "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree";
-const MAX_MAVEN_DEPENDENCY_OUTPUT_CHARACTERS: usize = 500_000;
+// Verbose trees with thousands of nodes exceed the build console budget.
+// Expose this separate capture budget to native process consumers.
+const MAX_MAVEN_DEPENDENCY_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_MAVEN_DEPENDENCY_NODES: usize = 10_000;
 const MAX_MAVEN_DEPENDENCY_DEPTH: usize = 64;
 const MAX_MAVEN_TEST_OUTPUT_CHARACTERS: usize = 500_000;
@@ -159,7 +161,7 @@ pub fn launch_plan(request: MavenLaunchPlanRequest) -> Result<MavenLaunchPlanRes
 pub fn dependency_plan(
     request: MavenDependencyPlanRequest,
 ) -> Result<MavenLaunchPlanResponse, CoreError> {
-    launch_plan_with_arguments(
+    let mut plan = launch_plan_with_arguments(
         request.root,
         request.context,
         request.module,
@@ -172,7 +174,14 @@ pub fn dependency_plan(
             "-Duser.country=US".to_string(),
         ],
         false,
-    )
+    )?;
+    // An omitted module selects the reactor root, not every reactor project.
+    if !plan.arguments.iter().any(|argument| argument == "-pl") {
+        plan.arguments
+            .splice(2..2, ["-pl".to_string(), ".".to_string()]);
+    }
+    plan.output_byte_limit = Some(MAX_MAVEN_DEPENDENCY_OUTPUT_BYTES);
+    Ok(plan)
 }
 
 /// Applies a validated Maven context to Core-owned run/debug arguments.
@@ -234,6 +243,7 @@ pub(crate) fn launch_plan_with_arguments(
         arguments,
         working_directory: validated.reactor_path,
         configuration_fingerprint,
+        output_byte_limit: None,
     })
 }
 
@@ -465,7 +475,15 @@ fn settings_parse_error(error: quick_xml::Error) -> CoreError {
 fn installation_settings_path(maven_executable_path: Option<&str>) -> Option<String> {
     let configured = Path::new(maven_executable_path?);
     let home = if configured.is_dir() {
-        configured.to_path_buf()
+        if configured
+            .file_name()?
+            .to_str()?
+            .eq_ignore_ascii_case("bin")
+        {
+            configured.parent()?.to_path_buf()
+        } else {
+            configured.to_path_buf()
+        }
     } else {
         // Only the `<home>/bin/mvn*` layout identifies an installation root.
         let bin = configured.parent()?;
@@ -474,7 +492,24 @@ fn installation_settings_path(maven_executable_path: Option<&str>) -> Option<Str
         }
         bin.parent()?.to_path_buf()
     };
-    let settings = home.join("conf").join("settings.xml");
+    // mvnd embeds Maven under `mvn`; its own `conf` contains daemon settings.
+    // Select the same global settings as its Maven engine, including when the
+    // user has saved the distribution root rather than the resolved launcher.
+    let mvnd_launchers = ["mvnd.exe", "mvnd.cmd", "mvnd.bat", "mvnd"];
+    let is_mvnd = if configured.is_dir() {
+        mvnd_launchers
+            .iter()
+            .any(|name| home.join("bin").join(name).is_file())
+    } else {
+        // An explicit Maven launcher must retain its own settings even when
+        // a daemon client is installed beside it.
+        let name = configured.file_name()?.to_str()?;
+        mvnd_launchers
+            .iter()
+            .any(|launcher| name.eq_ignore_ascii_case(launcher))
+    };
+    let maven_home = if is_mvnd { home.join("mvn") } else { home };
+    let settings = maven_home.join("conf").join("settings.xml");
     settings
         .is_file()
         .then(|| settings.to_string_lossy().into_owned())
@@ -1595,27 +1630,43 @@ struct ParsedDependency {
 pub fn dependencies(
     request: MavenDependenciesRequest,
 ) -> Result<MavenDependenciesResponse, CoreError> {
-    if request
-        .output
-        .chars()
-        .nth(MAX_MAVEN_DEPENDENCY_OUTPUT_CHARACTERS)
-        .is_some()
-    {
+    if request.output.len() > MAX_MAVEN_DEPENDENCY_OUTPUT_BYTES {
         return Err(CoreError::new(
             ErrorCode::ParseFailed,
             "Maven dependency output exceeds the supported limit",
         )
-        .with_details(format!(
-            "maximumCharacters={MAX_MAVEN_DEPENDENCY_OUTPUT_CHARACTERS}"
-        )));
+        .with_details(format!("maximumBytes={MAX_MAVEN_DEPENDENCY_OUTPUT_BYTES}")));
     }
     let module_path = normalized_project_path(&request.module_path, "Maven module")?;
     let ansi =
         Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").expect("static ANSI escape expression is valid");
     let mut parsed = Vec::new();
+    let mut output_module: Option<String> = None;
     for raw_line in request.output.lines() {
         let line = ansi.replace_all(raw_line, "");
-        let Some(entry) = parse_dependency_line(&line, &module_path)? else {
+        // mvnd decorates buffered reactor output with a module label. Keep that
+        // identity until validation so different projects can never be merged.
+        let trimmed = line.trim();
+        let (label, tree_line) = trimmed
+            .strip_prefix('[')
+            .and_then(|value| value.split_once("] "))
+            .filter(|(_, value)| value.starts_with("[INFO] "))
+            .map(|(label, value)| (Some(label), value))
+            .unwrap_or((None, trimmed));
+        if tree_line.contains("+- ") || tree_line.contains("\\- ") {
+            let label = label.unwrap_or("");
+            if output_module
+                .as_deref()
+                .is_some_and(|previous| previous != label)
+            {
+                return Err(CoreError::new(
+                    ErrorCode::ParseFailed,
+                    "Maven dependency output contains multiple modules; reload one module",
+                ));
+            }
+            output_module = Some(label.to_string());
+        }
+        let Some(entry) = parse_dependency_line(tree_line, &module_path)? else {
             continue;
         };
         if parsed.len() == MAX_MAVEN_DEPENDENCY_NODES {
@@ -1664,7 +1715,7 @@ fn parse_dependency_line(
     let prefix = &line[..marker];
     let mut chunks = prefix.as_bytes().chunks_exact(3);
     if !chunks.all(|chunk| chunk == b"|  " || chunk == b"   ") || !chunks.remainder().is_empty() {
-        return Ok(None);
+        return Err(invalid_dependency_structure());
     }
     let depth = prefix.len() / 3;
     if depth >= MAX_MAVEN_DEPENDENCY_DEPTH {
@@ -1713,14 +1764,14 @@ fn parse_dependency_line(
             *version,
             *scope,
         ),
-        _ => return Ok(None),
+        _ => return Err(invalid_dependency_structure()),
     };
     if [group_id, artifact_id, artifact_type, version, scope]
         .iter()
         .any(|value| value.trim().is_empty())
         || classifier.is_some_and(|value| value.trim().is_empty())
     {
-        return Ok(None);
+        return Err(invalid_dependency_structure());
     }
 
     let (resolution, selected_version) = dependency_resolution(annotation);

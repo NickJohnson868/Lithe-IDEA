@@ -33,7 +33,10 @@ interface GlobalSearchSessionSnapshot {
 
 interface GlobalSearchSessionState extends GlobalSearchSessionSnapshot {
   requestGeneration: number;
+  history: string[];
   actions: {
+    prepareTextSearch: () => void;
+    rememberQuery: (query: string) => void;
     setQuery: (query: string) => void;
     setIncludeQuery: (query: string) => void;
     setExcludeQuery: (query: string) => void;
@@ -75,7 +78,16 @@ export const createGlobalSearchStore = () =>
     searchOptions: DEFAULT_SEARCH_OPTIONS,
     resultsSearchKey: null,
     requestGeneration: 0,
+    history: [],
     actions: {
+      rememberQuery: (query) =>
+        set((state) => ({
+          history: [query, ...state.history.filter((entry) => entry !== query)].slice(0, 20),
+        })),
+      prepareTextSearch: () => {
+        get().actions.clearSearch();
+        set({ includeQuery: "", excludeQuery: "" });
+      },
       setQuery: (query) => set({ query }),
       setIncludeQuery: (includeQuery) => set({ includeQuery }),
       setExcludeQuery: (excludeQuery) => set({ excludeQuery }),

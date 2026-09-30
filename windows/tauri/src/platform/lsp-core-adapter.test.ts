@@ -31,6 +31,7 @@ const commands: string[] = [];
 let scenario:
   | "poll-failure"
   | "preparation-snapshot"
+  | "ready-snapshot"
   | "capabilities"
   | "delayed-start"
   | "failure"
@@ -150,6 +151,19 @@ const executeCore = mock(
           };
         }
         return { id: request.id, ok: true as const, data: { events: [] } };
+      }
+      if (scenario === "ready-snapshot") {
+        return {
+          id: request.id,
+          ok: true as const,
+          data: {
+            events:
+              sessionPollCount === 1
+                ? readyEvents(sessionId).filter((event) => event.type === "featuresChanged")
+                : [],
+            projectPreparation: { phase: "ready", status: "ready", blocksRun: false },
+          },
+        };
       }
       if (scenario === "preparation-snapshot") {
         return {
@@ -634,6 +648,26 @@ describe("Rust Core LSP adapter failures", () => {
     expect(getProjectPreparation("C:/work")).toBeUndefined();
   });
 
+  test("ready snapshot completes initialization after the one-shot ready event was consumed", async () => {
+    scenario = "ready-snapshot";
+    await invokeLsp("lsp_start", {
+      workspacePath: "C:/work",
+      languageId: "java",
+      providerId: "java",
+      serverPath: "C:/Lithe/jdtls.bat",
+    });
+    expect(getProjectPreparation("C:/work")?.status).toBe("ready");
+    expect(startCount).toBe(1);
+    expect(
+      emit.mock.calls.some(
+        (call) =>
+          (call as unknown[])[0] === "lsp://language-lifecycle" &&
+          ((call as unknown[])[1] as { phase?: string })?.phase === "fullyReady",
+      ),
+    ).toBe(true);
+    await invokeLsp("lsp_stop", { workspacePath: "C:/work" });
+  });
+
   test("restores preparation from the current snapshot without a preparation event", async () => {
     scenario = "preparation-snapshot";
     await invokeLsp("lsp_start", {
@@ -740,8 +774,16 @@ describe("Rust Core LSP adapter failures", () => {
       {
         schemaVersion: 1,
         entries: [
-          { sourcePath: "app-a/src/main/java/demo/App.java", mainClass: "demo.App", projectName: "app-a" },
-          { sourcePath: "app-b/src/main/java/demo/App.java", mainClass: "demo.App", projectName: "app-b" },
+          {
+            sourcePath: "app-a/src/main/java/demo/App.java",
+            mainClass: "demo.App",
+            projectName: "app-a",
+          },
+          {
+            sourcePath: "app-b/src/main/java/demo/App.java",
+            mainClass: "demo.App",
+            projectName: "app-b",
+          },
         ],
         diagnostics: [],
       },
@@ -826,15 +868,17 @@ describe("Rust Core LSP adapter failures", () => {
     scenario = "semantic-request";
     const expected = {
       schemaVersion: 1,
-      items: [{
-        id: "method",
-        label: "composed()",
-        fullName: "demo.OddlyNamedSpec#composed()",
-        projectName: "app",
-        testKind: 0,
-        testLevel: 6,
-        children: [],
-      }],
+      items: [
+        {
+          id: "method",
+          label: "composed()",
+          fullName: "demo.OddlyNamedSpec#composed()",
+          projectName: "app",
+          testKind: 0,
+          testLevel: 6,
+          children: [],
+        },
+      ],
       diagnostics: [],
     };
     semanticRequestResults = [expected];
@@ -862,11 +906,13 @@ describe("Rust Core LSP adapter failures", () => {
     scenario = "semantic-request";
     const expected = {
       schemaVersion: 1,
-      methods: [{
-        mainClass: "demo.App",
-        projectName: "app",
-        range: { startLine: 3, startUtf16Column: 23, endLine: 3, endUtf16Column: 27 },
-      }],
+      methods: [
+        {
+          mainClass: "demo.App",
+          projectName: "app",
+          range: { startLine: 3, startUtf16Column: 23, endLine: 3, endUtf16Column: 27 },
+        },
+      ],
       diagnostics: [],
     };
     semanticRequestResults = [expected];

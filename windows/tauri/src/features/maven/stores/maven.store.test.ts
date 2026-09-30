@@ -1,3 +1,4 @@
+import outputBudget from "../../../../../../shared/fixtures/maven/dependency-output-budget-v1.json";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type {
   MavenDependenciesResponse,
@@ -88,7 +89,8 @@ const dependencyTree: MavenDependenciesResponse = {
 
 const scanMavenProject = mock(async (_root: string, _paths?: string[]) => project);
 const createMavenLaunchPlan = mock(async () => launchPlan);
-const createMavenDependencyPlan = mock(async () => launchPlan);
+const dependencyPlan: MavenLaunchPlan = { ...launchPlan, outputByteLimit: outputBudget.outputByteLimit };
+const createMavenDependencyPlan = mock(async (): Promise<MavenLaunchPlan> => dependencyPlan);
 const parseMavenDependencies = mock(
   async (_modulePath: string, _output: string): Promise<MavenDependenciesResponse> =>
     dependencyTree,
@@ -170,7 +172,7 @@ beforeEach(() => {
   createMavenLaunchPlan.mockReset();
   createMavenLaunchPlan.mockResolvedValue(launchPlan);
   createMavenDependencyPlan.mockReset();
-  createMavenDependencyPlan.mockResolvedValue(launchPlan);
+  createMavenDependencyPlan.mockResolvedValue(dependencyPlan);
   parseMavenDiagnostics.mockReset();
   parseMavenDiagnostics.mockResolvedValue([]);
   parseMavenTestResults.mockReset();
@@ -1218,6 +1220,71 @@ describe("Maven workspace state", () => {
 });
 
 describe("Maven dependency state", () => {
+  test("captures a verbose tree beyond the old limit without dropping its tail", async () => {
+    const timer = new ManualTimer();
+    const store = createMavenStore("workspace", dependencies, {
+      setTimer: timer.set,
+      clearTimer: timer.clear,
+    });
+    await store.getState().actions.loadProject("D:/work", ["reactor/pom.xml"]);
+    await store.getState().actions.loadDependencies("service");
+    const sessionId = store.getState().activeDependencySessionId!;
+    const output = Array.from(
+      { length: outputBudget.nodeCount },
+      (_, index) => `${outputBudget.linePrefix}${index}${outputBudget.lineSuffix}`,
+    ).join("");
+    expect(output.length).toBeGreaterThan(500_000);
+    try {
+      // Many process events must share one budget without repeatedly normalizing old output.
+      for (let offset = 0; offset < output.length; offset += 4096) {
+        store
+          .getState()
+          .actions.appendDependencyOutput(sessionId, output.slice(offset, offset + 4096));
+      }
+      await store.getState().actions.finishDependencyProcess(sessionId, 0);
+      expect(parseMavenDependencies).toHaveBeenCalledWith("service", output);
+      expect(store.getState().dependencyLoads.service?.status).toBe("ready");
+      expect(stopMavenProcess).not.toHaveBeenCalled();
+      expect(timer.size).toBe(0);
+    } finally {
+      await store.getState().actions.cancelDependencies("service");
+    }
+  });
+
+  test("uses the plan byte budget, stops overflow, and resets it for retry", async () => {
+    createMavenDependencyPlan.mockResolvedValue({ ...dependencyPlan, outputByteLimit: 8 });
+    const timer = new ManualTimer();
+    const store = createMavenStore("workspace", dependencies, {
+      setTimer: timer.set,
+      clearTimer: timer.clear,
+    });
+    await store.getState().actions.loadProject("D:/work", ["reactor/pom.xml"]);
+    await store.getState().actions.loadDependencies("service");
+    const sessionId = store.getState().activeDependencySessionId!;
+    try {
+      store.getState().actions.appendDependencyOutput(sessionId, "😀\r");
+      store.getState().actions.appendDependencyOutput(sessionId, "😀");
+      expect(store.getState().dependencyLoads.service?.status).toBe("loading");
+      store.getState().actions.appendDependencyOutput(sessionId, "x");
+      expect(store.getState().dependencyLoads.service?.error).toContain("exceeded");
+      expect(stopMavenProcess).toHaveBeenCalledWith(sessionId);
+      expect(store.getState().dependencyOutput).toBe("");
+      expect(timer.size).toBe(0);
+      store.getState().actions.appendDependencyOutput(sessionId, "stale");
+      await store.getState().actions.finishDependencyProcess(sessionId, 0);
+      expect(parseMavenDependencies).not.toHaveBeenCalled();
+      await store.getState().actions.loadDependencies("service");
+      const retryId = store.getState().activeDependencySessionId!;
+      store.getState().actions.appendDependencyOutput(retryId, "😀😀");
+      await store.getState().actions.finishDependencyProcess(retryId, 0);
+      expect(parseMavenDependencies).toHaveBeenCalledWith("service", "😀😀");
+      expect(store.getState().dependencyLoads.service?.status).toBe("ready");
+      expect(timer.size).toBe(0);
+    } finally {
+      await store.getState().actions.cancelDependencies("service");
+    }
+  });
+
   test("loads and parses one module without replacing build task state", async () => {
     const store = createMavenStore("workspace", dependencies);
     await store.getState().actions.loadProject("D:/work", ["reactor/pom.xml"]);

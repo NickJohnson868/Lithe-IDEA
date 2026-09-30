@@ -6,6 +6,7 @@ import { useTranslation } from "@/i18n/locale-provider";
 import { openFolder } from "@/features/file-system/controllers/platform";
 import { useFileSystemStore } from "@/features/file-system/stores/file-system.store";
 import { useFooterGitBranchItem } from "@/features/layout/components/footer/footer-git-branch-item";
+import { openGlobalSearch } from "@/features/layout/actions/workbench-tool-window-actions";
 import { AppUpdateControl } from "@/features/layout/components/app-update-control";
 import SettingsDialog from "@/features/settings/components/settings-dialog";
 import { useSettingsStore } from "@/features/settings/stores/settings.store";
@@ -62,7 +63,6 @@ export const TitleBar = ({
   const handleOpenFolder = useFileSystemStore((state) => state.handleOpenFolder);
   const closeProject = useFileSystemStore((state) => state.closeProject);
   const projectTabs = useWorkspaceTabsStore.use.projectTabs();
-  const setIsQuickOpenVisible = useUIState((state) => state.setIsQuickOpenVisible);
   const branchItem = useFooterGitBranchItem();
 
   const [menuBarActiveMenu, setMenuBarActiveMenu] = useState<string | null>(null);
@@ -239,15 +239,15 @@ export const TitleBar = ({
     </ChromeGroup>
   );
 
-  const quickOpenAction = (
+  const textSearchAction = (
     <Button
       type="button"
       variant="ghost"
       size="icon-xs"
-      tooltip={t("workbench.search")}
+      tooltip={t("textSearch.title")}
       tooltipSide="bottom"
-      onClick={() => setIsQuickOpenVisible(true)}
-      aria-label={t("workbench.search")}
+      onClick={openGlobalSearch}
+      aria-label={t("textSearch.title")}
     >
       <MagnifyingGlassIcon />
     </Button>
@@ -269,7 +269,7 @@ export const TitleBar = ({
           </Button>
         </span>
       </Tooltip>
-      {quickOpenAction}
+      {textSearchAction}
       <Button
         type="button"
         variant="ghost"
@@ -343,7 +343,7 @@ export const TitleBar = ({
           </ChromeGroup>
         </ChromeGroup>
         <ChromeGroup className="pointer-events-auto z-20">
-          {quickOpenAction}
+          {textSearchAction}
           {isWindows ? <TitleBarUpdateControl visible={showUpdateControl} /> : null}
 
           {showAppWindowControls && (

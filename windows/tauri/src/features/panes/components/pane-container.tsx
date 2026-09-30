@@ -70,6 +70,9 @@ const ExternalEditorTerminal = lazy(() =>
   })),
 );
 const DiffViewer = lazy(() => import("@/features/git/components/diff/git-diff-viewer"));
+const TextSearchFindWindow = lazy(
+  () => import("@/features/global-search/components/text-search-find-window"),
+);
 const GlobalSearchBuffer = lazy(
   () => import("@/features/global-search/components/global-search-buffer"),
 );
@@ -661,7 +664,11 @@ export function PaneContainer({ pane }: PaneContainerProps) {
           return <MarkdownDocumentView bufferId={buffer.id} />;
 
         case "globalSearch":
-          return <GlobalSearchBuffer />;
+          return buffer.searchSnapshot ? (
+            <TextSearchFindWindow snapshot={buffer.searchSnapshot} />
+          ) : (
+            <GlobalSearchBuffer />
+          );
 
         case "diagnostics":
           return <DiagnosticsBuffer />;

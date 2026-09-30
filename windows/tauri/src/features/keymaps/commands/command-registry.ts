@@ -1,6 +1,6 @@
 import { useBufferStore } from "@/features/editor/stores/buffer.store";
 import {
-  openGlobalSearchSidebar,
+  openGlobalSearch,
   toggleDiagnosticsPane,
 } from "@/features/layout/actions/workbench-tool-window-actions";
 import {
@@ -646,7 +646,7 @@ const viewCommands: Command[] = [
     title: "Global Search",
     category: "View",
     keybinding: "cmd+shift+f",
-    execute: openGlobalSearchSidebar,
+    execute: openGlobalSearch,
   },
   {
     id: "workbench.searchEverywhere",
@@ -659,7 +659,7 @@ const viewCommands: Command[] = [
     title: "Project Search",
     category: "View",
     keybinding: "cmd+shift+h",
-    execute: openGlobalSearchSidebar,
+    execute: openGlobalSearch,
   },
   {
     id: "workbench.showFileExplorer",

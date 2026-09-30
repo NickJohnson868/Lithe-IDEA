@@ -106,6 +106,18 @@ capability → Rust 以 LSP request ID 关联 deadline，用不透明 operation
 ID 投影 terminal result。停止 session 时先 `shutdown` 后 `exit`，服务器
 无响应则由超时路径强制停止，不直接用 `terminate()` 代替。
 
+### Windows 热重载恢复
+
+事件轮询会消费一次性 ready 事件，恢复页面不能只等待事件重放。Java 适配器
+同时读取 Core 发布的 projectPreparation 快照；快照为 ready 时恢复就绪投影
+并结束准备提示。该快照仍由 Core 的 ServiceReady、Profiles 和配置状态决定，
+前端不自行猜测就绪，也不另设固定初始化期限。
+
+传输失败、启动失败或停止失败时，只有确认 Core 已停止并销毁会话，才能
+移除前端持有的会话映射。清理失败保留 owner，以免下次重试启动第二个 JVM
+争用同一缓存目录。`lsp-core-adapter.test.ts` 覆盖缺少一次性 ready 事件、
+仍可从当前快照完成初始化的恢复场景。
+
 ### Windows 工作区打开时的 Git 优先级
 
 大型 Maven 工作区的仓库扫描和 Java 导入会竞争磁盘、进程资源。Windows 的

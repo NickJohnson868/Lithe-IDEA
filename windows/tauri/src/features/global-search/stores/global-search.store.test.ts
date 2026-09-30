@@ -86,3 +86,25 @@ describe("global search session store", () => {
     });
   });
 });
+
+test("text search preserves visible options, clears legacy filters and invalidates earlier requests", () => {
+  const store = createGlobalSearchStore();
+  const actions = store.getState().actions;
+  actions.setQuery("a.b");
+  actions.setIncludeQuery("*.java");
+  actions.setExcludeQuery("src/**");
+  actions.setSearchOption("useRegex", true);
+  actions.setSearchOption("caseSensitive", true);
+  actions.setSearchOption("wholeWord", true);
+  const generation = actions.beginSearch();
+  actions.completeSearch("old", response);
+  actions.prepareTextSearch();
+  expect(actions.isCurrentRequest(generation)).toBe(false);
+  expect(store.getState()).toMatchObject({
+    query: "a.b",
+    includeQuery: "",
+    excludeQuery: "",
+    results: [],
+    searchOptions: { caseSensitive: true, wholeWord: true, useRegex: true },
+  });
+});

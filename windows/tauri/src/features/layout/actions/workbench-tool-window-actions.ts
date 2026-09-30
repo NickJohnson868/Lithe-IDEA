@@ -1,3 +1,4 @@
+import { useGlobalSearchStore } from "@/features/global-search/stores/global-search.store";
 import { useUIState } from "@/features/window/stores/ui-state.store";
 
 interface DiagnosticsPaneState {
@@ -8,11 +9,6 @@ interface DiagnosticsPaneState {
 interface DiagnosticsPaneUpdate {
   bottomPaneActiveTab: "diagnostics";
   isBottomPaneVisible: boolean;
-}
-
-interface GlobalSearchSidebarUpdate {
-  activeSidebarView: "search";
-  isSidebarVisible: true;
 }
 
 export function resolveDiagnosticsPaneUpdate(state: DiagnosticsPaneState): DiagnosticsPaneUpdate {
@@ -34,16 +30,10 @@ export function toggleDiagnosticsPane(): void {
   state.setIsBottomPaneVisible(update.isBottomPaneVisible);
 }
 
-export function resolveGlobalSearchSidebarUpdate(): GlobalSearchSidebarUpdate {
-  return {
-    activeSidebarView: "search",
-    isSidebarVisible: true,
-  };
-}
-
-export function openGlobalSearchSidebar(): void {
-  const state = useUIState.getState();
-  const update = resolveGlobalSearchSidebarUpdate();
-  state.setActiveView(update.activeSidebarView);
-  state.setIsSidebarVisible(update.isSidebarVisible);
+export function openGlobalSearch(): void {
+  const ui = useUIState.getState();
+  if (!ui.isGlobalSearchVisible) {
+    useGlobalSearchStore.getState().actions.prepareTextSearch();
+  }
+  ui.setIsGlobalSearchVisible(true);
 }

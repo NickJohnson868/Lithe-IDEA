@@ -66,6 +66,7 @@ interface Session {
   pending: Map<string, PendingOperation>;
   completed: Map<string, RuntimeEvent>;
   documentVersions: Map<string, number>;
+  preparationFeedback?: "loading" | "ready";
 }
 
 interface FileAttachment {
@@ -287,7 +288,8 @@ function restorePersistedSessions(): void {
     }
     for (const session of sessions.values()) {
       if (session.files.size === 0) {
-        if (session.languageId === "java") clearProjectPreparation(session.workspacePath, session.id);
+        if (session.languageId === "java")
+          clearProjectPreparation(session.workspacePath, session.id);
         removeSessionMappings(session);
       }
     }
@@ -425,7 +427,7 @@ function parseStructuredRuntimeDetail(detail: string | undefined): JsonRecord | 
 }
 
 function isInitializationTimeout(reason: unknown): boolean {
-  const code = (reason as Error & { code?: string } | null)?.code;
+  const code = (reason as (Error & { code?: string }) | null)?.code;
   return code === "timed_out" || code === "initializeTimeout" || code === "serviceReadyTimeout";
 }
 
@@ -437,13 +439,21 @@ async function dispatchSessionEvent(session: Session, event: RuntimeEvent): Prom
     failProjectPreparation(session.workspacePath, session.id);
   }
 
+  if (event.type === "log" && event.message === "Java language service protocol initialized") {
+    session.preparationFeedback = "loading";
+  }
   await dispatchRuntimeEvent(event, session.workspacePath);
   if (event.type === "stateChanged" && event.state) {
-    const phase = event.state === "processStarting"
-      ? "starting"
-      : event.state === "initializing"
-        ? event.providerId === "java" ? "projectImporting" : "starting"
-        : event.state === "ready" ? "serviceReady" : event.state;
+    const phase =
+      event.state === "processStarting"
+        ? "starting"
+        : event.state === "initializing"
+          ? event.providerId === "java"
+            ? "projectImporting"
+            : "starting"
+          : event.state === "ready"
+            ? "serviceReady"
+            : event.state;
     await emit("lsp://language-lifecycle", {
       providerId: event.providerId,
       sessionId: event.sessionId,
@@ -496,13 +506,39 @@ async function dispatchSessionEvent(session: Session, event: RuntimeEvent): Prom
 }
 
 async function poll(session: Session, timeoutMilliseconds = 30_000): Promise<RuntimeEvent[]> {
-  const response = await core<{ events: RuntimeEvent[]; projectPreparation?: ProjectPreparation }>("lsp.waitEvents", {
-    sessionId: session.id,
-    timeoutMilliseconds,
-  });
+  const response = await core<{ events: RuntimeEvent[]; projectPreparation?: ProjectPreparation }>(
+    "lsp.waitEvents",
+    {
+      sessionId: session.id,
+      timeoutMilliseconds,
+    },
+  );
   for (const event of response.events) await dispatchSessionEvent(session, event);
   if (session.languageId === "java" && response.projectPreparation) {
     updateProjectPreparation(session.workspacePath, session.id, response.projectPreparation);
+    // Ready events are consumed once. Reloaded consumers must also use the
+    // durable preparation snapshot, otherwise an already-ready JVM waits forever.
+    if (
+      response.projectPreparation.status === "ready" &&
+      session.lifecycle.phase !== "stopping" &&
+      !isSessionTerminal(session.lifecycle)
+    ) {
+      if (!isSessionReady(session.lifecycle)) {
+        transitionSessionLifecycle(session.lifecycle, "ready");
+        persistSessions();
+      }
+      if (session.preparationFeedback !== "ready") {
+        session.preparationFeedback = "ready";
+        await emit("lsp://language-lifecycle", {
+          sessionId: session.id,
+          providerId: session.languageId,
+          workspacePath: session.workspacePath,
+          phase: "fullyReady",
+        });
+      }
+    } else if (response.projectPreparation.status === "loading") {
+      session.preparationFeedback = "loading";
+    }
   }
   return response.events;
 }
@@ -576,8 +612,11 @@ async function runEventPump(session: Session, owner: EventPumpOwner): Promise<vo
     rejectPendingOperations(session, error);
     transitionSessionLifecycle(session.lifecycle, "failed");
     if (session.languageId === "java") failProjectPreparation(session.workspacePath, session.id);
-    removeSessionMappings(session);
-    persistSessions();
+    await cleanupFailedStart(
+      sessionKey(session.workspacePath, session.languageId),
+      session,
+      owner.operation.operationId,
+    );
     owner.operation.failed(error);
     const details = String((error as Error & { details?: string }).details ?? "");
     // waitEvents returns process_failed/sessionStopped after an intentional stop.
@@ -666,11 +705,11 @@ async function cleanupFailedStart(
 ): Promise<void> {
   if (session.languageId === "java") failProjectPreparation(session.workspacePath, session.id);
   stoppingSessionIds.add(session.id);
-  if (sessions.get(key) === session) sessions.delete(key);
-  removeSessionMappings(session);
-  persistSessions();
   try {
     await stopAndDestroySession(session, operationId);
+    if (sessions.get(key) === session) sessions.delete(key);
+    removeSessionMappings(session);
+    persistSessions();
   } catch (reason) {
     frontendTrace("warn", "lsp.runtime", "Language-server cleanup failed", {
       operationId,
@@ -739,6 +778,7 @@ async function recoverSession(session: Session): Promise<Session | null> {
           sessionId: session.id,
           error: reason instanceof Error ? reason.message : String(reason),
         });
+        throw reason;
       }
       removeSessionMappings(session);
       persistSessions();
@@ -764,6 +804,9 @@ async function recoverSession(session: Session): Promise<Session | null> {
     return session;
   } catch (reason) {
     if (session.languageId === "java") failProjectPreparation(session.workspacePath, session.id);
+    // Never forget a live process and then start a second JVM on its cache.
+    // A failed cleanup keeps this owner available for a later stop/retry.
+    await stopAndDestroySession(session, operation.operationId);
     removeSessionMappings(session);
     persistSessions();
     operation.failed(reason);
@@ -855,9 +898,7 @@ async function createSession(args: JsonRecord, key: string): Promise<Session> {
   return session;
 }
 
-async function waitForProjectedReadiness(
-  session: Session,
-): Promise<"ready" | "terminal"> {
+async function waitForProjectedReadiness(session: Session): Promise<"ready" | "terminal"> {
   const operation = new LspOperationLog("sessionReadinessWait", crypto.randomUUID(), {
     sessionId: session.id,
     workspacePath: session.workspacePath,
@@ -970,8 +1011,6 @@ async function stopSession(session: Session): Promise<void> {
   if (session.languageId === "java") clearProjectPreparation(session.workspacePath, session.id);
   const key = sessionKey(session.workspacePath, session.languageId);
   stoppingSessionIds.add(session.id);
-  removeSessionMappings(session);
-  persistSessions();
 
   let stopPromise = sessionStops.get(key);
   if (!stopPromise) {
@@ -982,6 +1021,8 @@ async function stopSession(session: Session): Promise<void> {
     });
     stopPromise = stopAndDestroySession(session, operation.operationId)
       .then((outcome) => {
+        removeSessionMappings(session);
+        persistSessions();
         if (outcome === "timedOut") {
           operation.timedOut({ stage: "cleanup" });
         } else {
@@ -1402,7 +1443,10 @@ async function closeDocument(session: Session, filePath: string): Promise<void> 
 }
 
 export function ownsLspSession(sessionId: string): boolean {
-  return stoppingSessionIds.has(sessionId) || [...sessions.values()].some((session) => session.id === sessionId);
+  return (
+    stoppingSessionIds.has(sessionId) ||
+    [...sessions.values()].some((session) => session.id === sessionId)
+  );
 }
 
 export function getLspSessionSnapshot(args: {
@@ -1656,7 +1700,7 @@ export async function invokeLsp<T>(command: string, args: JsonRecord = {}): Prom
     const selected =
       exact.length === 1
         ? exact[0]
-        : exact.find((entry) => mainClassMatches(entry.mainClass, configuredMainClass)) ?? null;
+        : (exact.find((entry) => mainClassMatches(entry.mainClass, configuredMainClass)) ?? null);
     if (!selected) {
       throw lspAdapterError(
         "invalid_response",

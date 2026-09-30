@@ -249,6 +249,9 @@ pub struct MavenLaunchExecutableResponse {
 #[serde(rename_all = "camelCase")]
 /// Deterministic Maven invocation consumed by native process adapters.
 pub struct MavenLaunchPlanResponse {
+    /// UTF-8 capture budget for dependency queries; omitted for ordinary builds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_byte_limit: Option<usize>,
     pub version: u32,
     pub executable: MavenLaunchExecutableResponse,
     pub arguments: Vec<String>,

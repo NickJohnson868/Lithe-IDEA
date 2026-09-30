@@ -36,7 +36,8 @@ import {
 } from "@/features/editor/stores/buffer-session-persistence";
 import { detectLanguageFromFileName } from "@/features/editor/utils/language-detection";
 import { logger } from "@/features/editor/utils/logger";
-import { readFileContent } from "@/features/file-system/controllers/file-operations";
+import { readFileContentWithEncoding } from "@/features/file-system/controllers/file-operations";
+import { isLocalDocumentPath, readDocumentFileDetails, readDocumentFileChange } from "@/platform/document-files";
 import type { MultiFileDiff } from "@/features/git/types/git-diff.types";
 import type { GitDiff } from "@/features/git/types/git.types";
 import {
@@ -51,7 +52,10 @@ import { ensureBufferInPane as ensureBufferInWorkspacePane } from "@/features/pa
 import { defaultSettings } from "@/features/settings/config/default-settings";
 import { useSettingsStore } from "@/features/settings/stores/settings.store";
 import { createTranslator } from "@/i18n/locale";
-import { cleanupBufferHistoryTracking, trackImmediateBufferHistoryChange } from "@/features/editor/stores/buffer-history-tracking";
+import {
+  cleanupBufferHistoryTracking,
+  trackImmediateBufferHistoryChange,
+} from "@/features/editor/stores/buffer-history-tracking";
 import type {
   EditorContent,
   MarkdownViewMode,
@@ -60,6 +64,7 @@ import type {
   TerminalContent,
   TokenEntry,
 } from "@/features/panes/types/pane-content.types";
+import type { FileEncoding } from "@/platform/document-files";
 import { createWorkspaceScopedStore } from "@/features/workspace/stores/create-workspace-scoped-store";
 import {
   isEditorContent,
@@ -210,6 +215,17 @@ interface BufferActions {
   updateBufferTokens: (bufferId: string, tokens: TokenEntry[]) => void;
   setMarkdownViewMode: (bufferId: string, mode: MarkdownViewMode) => void;
   updateBufferLanguage: (bufferId: string, language: string) => void;
+  setBufferEncoding: (bufferId: string, encoding: FileEncoding, diskIdentity?: string) => void;
+  setBufferReadEncoding: (bufferId: string, encoding: FileEncoding, diskIdentity?: string) => void;
+  setBufferSaveEncoding: (bufferId: string, encoding: FileEncoding, diskIdentity?: string) => void;
+  replaceBufferFromDisk: (
+    bufferId: string,
+    expectedPath: string,
+    expectedRevision: number,
+    content: string,
+    encoding: FileEncoding,
+    diskIdentity: string,
+  ) => boolean;
   markBufferDirty: (bufferId: string, isDirty: boolean) => void;
   applyDocumentLifecycle: (bufferId: string, lifecycle: DocumentLifecycleState) => void;
   recordSuccessfulBufferSave: (
@@ -238,6 +254,9 @@ interface BufferActions {
     name: string;
     isPinned: boolean;
     isPreview: boolean;
+    readEncoding?: FileEncoding;
+    saveEncoding?: FileEncoding;
+    encoding?: FileEncoding;
     editorState?: PersistedEditorViewState;
   }) => string;
   markBufferLoading: (bufferId: string) => void;
@@ -246,6 +265,8 @@ interface BufferActions {
     bufferId: string,
     content: string,
     language: string | undefined,
+    encoding: FileEncoding | undefined,
+    diskIdentity?: string,
     editorState?: PersistedEditorViewState,
   ) => void;
   markBufferLoadFailed: (bufferId: string, error: string) => void;
@@ -255,7 +276,10 @@ interface BufferActions {
     bufferId: string,
     operationId: string,
   ) => Promise<ExternalBufferChangeResult>;
-  resolveExternalConflict: (bufferId: string, resolution: "keepEditor" | "loadDisk") => Promise<void>;
+  resolveExternalConflict: (
+    bufferId: string,
+    resolution: "keepEditor" | "loadDisk",
+  ) => Promise<void>;
   setPendingClose: (pending: PendingClose | null) => void;
   confirmCloseWithoutSaving: () => void;
   cancelPendingClose: () => void;
@@ -287,19 +311,33 @@ function makeDocumentBufferOwner(
         bufferId,
         path: buffer.path,
         lifecycle: lifecycleStateForBuffer(buffer),
-        baseline: buffer.acknowledgedDiskContent === undefined ? buffer.savedContent : buffer.acknowledgedDiskContent,
+        baseline:
+          buffer.acknowledgedDiskContent === undefined
+            ? buffer.savedContent
+            : buffer.acknowledgedDiskContent,
+        diskIdentity: buffer.diskIdentity,
+        readEncoding: buffer.readEncoding ?? buffer.encoding,
         externalContent: buffer.externalDiskContent,
+        externalIdentity: buffer.externalDiskIdentity,
       };
     },
     reportFailure: () => {
       const t = createTranslator(useSettingsStore.getState().settings.displayLanguage);
       toast.error(t("editor.externalReadFailed"), { id: `document-sync-${bufferId}` });
     },
-    observeConflict: (content) => {
-      mutateEditorBuffer((buffer) => { buffer.externalDiskContent = content; });
+    observeConflict: (content, identity) => {
+      mutateEditorBuffer((buffer) => {
+        buffer.externalDiskContent = content;
+        buffer.externalDiskIdentity = identity;
+      });
     },
-    acknowledgeDisk: (content) => {
-      mutateEditorBuffer((buffer) => { buffer.acknowledgedDiskContent = content; buffer.externalDiskContent = undefined; });
+    acknowledgeDisk: (content, identity) => {
+      mutateEditorBuffer((buffer) => {
+        buffer.acknowledgedDiskContent = content;
+        buffer.externalDiskContent = undefined;
+        buffer.externalDiskIdentity = undefined;
+        buffer.diskIdentity = identity;
+      });
     },
     applyLifecycle: (lifecycle) => {
       mutateEditorBuffer((buffer) => {
@@ -307,18 +345,29 @@ function makeDocumentBufferOwner(
         buffer.isDirty = lifecycle.status !== "clean";
       });
     },
-    replaceWithDiskContent: (content) => {
+    replaceWithDiskContent: (content, details) => {
       const previous = getEditorBuffer();
-      if (previous) trackImmediateBufferHistoryChange({ bufferId, currentContent: previous.content, nextContent: content });
+      if (previous)
+        trackImmediateBufferHistoryChange({
+          bufferId,
+          currentContent: previous.content,
+          nextContent: content,
+        });
       mutateEditorBuffer((buffer) => {
         const revision = (buffer.contentRevision ?? 0) + 1;
         buffer.content = content;
         buffer.savedContent = content;
         buffer.acknowledgedDiskContent = undefined;
         buffer.externalDiskContent = undefined;
+        buffer.externalDiskIdentity = undefined;
         buffer.contentRevision = revision;
         buffer.documentLifecycle = { status: "clean", revision };
         buffer.isDirty = false;
+        if (details) {
+          buffer.readEncoding = details.encoding;
+          buffer.encoding = details.encoding;
+          buffer.diskIdentity = details.identity;
+        }
       });
     },
   };
@@ -1046,9 +1095,19 @@ const createBufferStore = (workspaceId: string) => {
             case "diagnostics":
             case "references":
             case "extensions": {
-              const existing = buffers.find((b) => b.type === spec.type);
+              const existing =
+                spec.type === "globalSearch" && spec.newTab
+                  ? undefined
+                  : buffers.find((b) => b.type === spec.type && (spec.type !== "globalSearch" || !b.isPinned));
               if (existing) {
                 set((state) => {
+                  if (spec.type === "globalSearch" && spec.searchSnapshot) {
+                    const target = state.buffers.find((buffer) => buffer.id === existing.id);
+                    if (target?.type === "globalSearch") {
+                      target.searchSnapshot = spec.searchSnapshot;
+                      target.name = `Find: ${spec.searchSnapshot.query.replace(/\n/g, " ")}`;
+                    }
+                  }
                   activateBufferInState(state, existing.id);
                 });
                 syncAndFocusBufferInPane(existing.id);
@@ -1610,6 +1669,80 @@ const createBufferStore = (workspaceId: string) => {
           });
         },
 
+        setBufferEncoding: (bufferId: string, encoding: FileEncoding, diskIdentity?: string) => {
+          set((state) => {
+            const buffer = state.buffers.find((candidate) => candidate.id === bufferId);
+            if (buffer && isEditorContent(buffer)) {
+              // Legacy action used by initial file loads: establish both roles.
+              buffer.readEncoding = encoding;
+              buffer.saveEncoding = encoding;
+              buffer.encoding = encoding;
+              if (diskIdentity !== undefined) buffer.diskIdentity = diskIdentity;
+            }
+          });
+          saveWorkspaceSession(get().buffers, get().activeBufferId);
+        },
+
+        setBufferReadEncoding: (bufferId: string, encoding: FileEncoding, diskIdentity?: string) => {
+          set((state) => {
+            const buffer = state.buffers.find((candidate) => candidate.id === bufferId);
+            if (buffer && isEditorContent(buffer)) {
+              buffer.readEncoding = encoding;
+              buffer.encoding = encoding;
+              if (diskIdentity !== undefined) buffer.diskIdentity = diskIdentity;
+            }
+          });
+          saveWorkspaceSession(get().buffers, get().activeBufferId);
+        },
+
+        setBufferSaveEncoding: (bufferId: string, encoding: FileEncoding, diskIdentity?: string) => {
+          set((state) => {
+            const buffer = state.buffers.find((candidate) => candidate.id === bufferId);
+            if (buffer && isEditorContent(buffer)) {
+              buffer.saveEncoding = encoding;
+              if (diskIdentity !== undefined) buffer.diskIdentity = diskIdentity;
+            }
+          });
+          saveWorkspaceSession(get().buffers, get().activeBufferId);
+        },
+
+        replaceBufferFromDisk: (
+          bufferId: string,
+          expectedPath: string,
+          expectedRevision: number,
+          content: string,
+          encoding: FileEncoding,
+          diskIdentity: string,
+        ) => {
+          let replaced = false;
+          set((state) => {
+            const buffer = state.buffers.find((candidate) => candidate.id === bufferId);
+            if (
+              !buffer ||
+              !isEditorContent(buffer) ||
+              buffer.path !== expectedPath ||
+              (buffer.contentRevision ?? 0) !== expectedRevision ||
+              buffer.documentLifecycle?.status === "saving"
+            ) return;
+            buffer.content = content;
+            buffer.savedContent = content;
+            buffer.acknowledgedDiskContent = undefined;
+            buffer.externalDiskContent = undefined;
+            buffer.externalDiskIdentity = undefined;
+            buffer.contentRevision = expectedRevision + 1;
+            buffer.documentLifecycle = { status: "clean", revision: buffer.contentRevision };
+            buffer.isDirty = false;
+            buffer.readEncoding = encoding;
+            buffer.encoding = encoding;
+            buffer.diskIdentity = diskIdentity;
+            buffer.loadState = "loaded";
+            buffer.loadError = undefined;
+            replaced = true;
+          });
+          if (replaced) saveWorkspaceSession(get().buffers, get().activeBufferId);
+          return replaced;
+        },
+
         markBufferDirty: (bufferId: string, isDirty: boolean) => {
           set((state) => {
             const buffer = state.buffers.find((b) => b.id === bufferId);
@@ -1908,9 +2041,20 @@ const createBufferStore = (workspaceId: string) => {
             return;
           }
 
+          const expectedRevision = buffer.contentRevision ?? 0;
           try {
-            const content = await readFileContent(buffer.path);
-            get().actions.updateBufferContent(bufferId, content, false);
+            const details = isLocalDocumentPath(buffer.path)
+              ? await readDocumentFileDetails(buffer.path, buffer.readEncoding ?? buffer.encoding)
+              : await readFileContentWithEncoding(buffer.path);
+            if (!details) return;
+            get().actions.replaceBufferFromDisk(
+              bufferId,
+              buffer.path,
+              expectedRevision,
+              details.content ?? "",
+              details.encoding,
+              details.identity,
+            );
             logger.debug("Editor", `[FileWatcher] Reloaded buffer from disk: ${buffer.path}`);
           } catch (error) {
             logger.error(
@@ -1926,6 +2070,9 @@ const createBufferStore = (workspaceId: string) => {
           name: string;
           isPinned: boolean;
           isPreview: boolean;
+          readEncoding?: FileEncoding;
+          saveEncoding?: FileEncoding;
+          encoding?: FileEncoding;
           editorState?: PersistedEditorViewState;
         }): string => {
           const id = generateBufferId(options.path);
@@ -1960,6 +2107,8 @@ const createBufferStore = (workspaceId: string) => {
           bufferId: string,
           content: string,
           language: string | undefined,
+          encoding: FileEncoding | undefined,
+          diskIdentity: string | undefined,
           editorState?: PersistedEditorViewState,
         ) => {
           const buffer = getBufferById(get().buffers, bufferId);
@@ -1989,6 +2138,12 @@ const createBufferStore = (workspaceId: string) => {
             buf.loadState = "loaded";
             buf.loadError = undefined;
             if (language) buf.language = language;
+            if (encoding) {
+              buf.readEncoding = encoding;
+              buf.encoding = encoding;
+              if (!buf.saveEncoding) buf.saveEncoding = encoding;
+            }
+            if (diskIdentity) buf.diskIdentity = diskIdentity;
             buf.documentLifecycle = { status: "clean", revision: buf.contentRevision };
           });
         },
@@ -2032,7 +2187,17 @@ const createBufferStore = (workspaceId: string) => {
               });
             },
           );
-          return handleExternalDocumentChange({ owner, operationId });
+          return handleExternalDocumentChange({
+            owner,
+            operationId,
+            dependencies: {
+              readChange: isLocalDocumentPath(owner.getSnapshot()?.path ?? "") ? readDocumentFileChange : undefined,
+              readDetails: (path, encoding) =>
+                isLocalDocumentPath(path)
+                  ? readDocumentFileDetails(path, encoding)
+                  : readFileContentWithEncoding(path),
+            },
+          });
         },
 
         resolveExternalConflict: async (
@@ -2052,7 +2217,12 @@ const createBufferStore = (workspaceId: string) => {
               });
             },
           );
-          await resolveExternalDocumentConflict(owner, resolution, crypto.randomUUID());
+          await resolveExternalDocumentConflict(owner, resolution, crypto.randomUUID(), {
+            readDetails: (path, encoding) =>
+              isLocalDocumentPath(path)
+                ? readDocumentFileDetails(path, encoding)
+                : readFileContentWithEncoding(path),
+          });
         },
 
         setPendingClose: (pending: PendingClose | null) => {

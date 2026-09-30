@@ -327,7 +327,39 @@ fn file_mask_limits_search_to_matching_extensions() {
     assert!(both.iter().any(|path| path.ends_with("Service.java")));
     assert!(both.iter().any(|path| path.ends_with("notes.txt")));
 
+    assert_eq!(search("*.java,*.txt,!*.txt"), java_only);
+    assert_eq!(search("!*.txt"), java_only);
+
     fs::remove_dir_all(root).expect("temporary fixture should be removable");
+}
+
+#[test]
+fn text_search_matches_multiline_crlf_without_requiring_symbol_index() {
+    let root = temporary_root("multiline-text-search");
+    fs::create_dir_all(&root).expect("fixture directory");
+    fs::write(
+        root.join("Example.java"),
+        "class Example {\r\n  Spring first;\r\n  spring second;\r\n}\r\n",
+    )
+    .expect("fixture source");
+    let response: Value = serde_json::from_str(&execute_json(
+        &serde_json::json!({
+            "id": "multiline", "command": "workspace.search", "payload": {
+                "root": root, "query": "Spring first;\n  spring second;", "caseSensitive": true,
+                "maxFileResults": 0, "maxContentResults": 1
+            }
+        })
+        .to_string(),
+    ))
+    .expect("JSON response");
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["data"]["matches"].as_array().unwrap().len(), 1);
+    assert_eq!(response["data"]["matches"][0]["line"], 2);
+    assert!(response["data"]["matches"][0]["preview"]
+        .as_str()
+        .unwrap()
+        .contains("\n  spring second;"));
+    fs::remove_dir_all(root).expect("remove fixture");
 }
 
 #[test]

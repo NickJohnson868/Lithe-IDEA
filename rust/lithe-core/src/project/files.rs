@@ -166,11 +166,11 @@ pub fn snapshot(request: WorkspaceSnapshotRequest) -> Result<WorkspaceSnapshotRe
     Ok(WorkspaceSnapshotResponse { root: node, files })
 }
 
-/// Searches visible file paths and current file contents using the shared index.
+/// Searches visible paths and current contents without waiting for symbol indexing.
 pub fn search(request: SearchRequest) -> Result<SearchResponse, CoreError> {
     let root = existing_root(&request.root)?;
-    let query = request.query.trim().to_string();
-    if query.is_empty() {
+    let query = request.query.replace("\r\n", "\n");
+    if query.trim().is_empty() {
         return Ok(SearchResponse {
             matches: Vec::new(),
         });
@@ -180,11 +180,25 @@ pub fn search(request: SearchRequest) -> Result<SearchResponse, CoreError> {
         request.hidden_directory_names.clone(),
         request.hidden_file_patterns.clone(),
     );
-    let index = search_index::get_or_build(&root, &rules)?;
-    let index = index
-        .read()
-        .map_err(|_| CoreError::new(ErrorCode::Unknown, "Search index lock was poisoned"))?;
-    search_with_index(&root, &request, &query, &index)
+    if request.max_file_results == Some(0) {
+        // Content-only queries can fill their budget before visiting unrelated
+        // subtrees. Preserve traversal order without allocating the full file list.
+        return search_with_paths(
+            &root,
+            &request,
+            &query,
+            &[],
+            search_index::visible_files(&root, &rules)?,
+        );
+    }
+    let paths = search_index::visible_paths(&root, &rules)?;
+    search_with_paths(
+        &root,
+        &request,
+        &query,
+        &paths,
+        paths.iter().cloned().map(Ok),
+    )
 }
 
 fn search_with_index(
@@ -192,6 +206,28 @@ fn search_with_index(
     request: &SearchRequest,
     query: &str,
     index: &WorkspaceSearchIndex,
+) -> Result<SearchResponse, CoreError> {
+    let paths = index
+        .all_file_ids()
+        .into_iter()
+        .filter_map(|id| index.file(id).map(|file| file.path.clone()))
+        .collect::<Vec<_>>();
+    let multiline = query.contains('\n') || (request.regular_expression && query.contains("\\n"));
+    let candidates = index
+        .candidate_ids(query, request.regular_expression || multiline)
+        .into_iter()
+        .filter_map(|id| index.file(id).map(|file| file.path.clone()))
+        .collect::<Vec<_>>();
+    search_with_paths(root, request, query, &paths, candidates.into_iter().map(Ok))
+}
+
+/// Shares exact matching between bounded text scans and indexed Search Everywhere.
+fn search_with_paths(
+    root: &Path,
+    request: &SearchRequest,
+    query: &str,
+    paths: &[String],
+    candidates: impl Iterator<Item = Result<String, CoreError>>,
 ) -> Result<SearchResponse, CoreError> {
     let matcher = Matcher::new(
         query,
@@ -206,15 +242,11 @@ fn search_with_index(
     let mut matches = Vec::new();
     let mut file_matches = 0;
 
-    for id in index.all_file_ids() {
+    for path in paths {
         crate::protocol::cancellation::check()?;
         if matches.len() >= limit || file_matches >= file_limit {
             break;
         }
-        let Some(indexed_file) = index.file(id) else {
-            continue;
-        };
-        let path = &indexed_file.path;
         if !file_mask_allows(&masks, path) {
             continue;
         }
@@ -231,22 +263,78 @@ fn search_with_index(
     }
 
     let mut content_matches = 0;
-    for id in index.candidate_ids(query, request.regular_expression) {
-        crate::protocol::cancellation::check()?;
-        if matches.len() >= limit || content_matches >= content_limit {
-            break;
-        }
-        let Some(indexed_file) = index.file(id) else {
-            continue;
+    let multiline = query.contains('\n') || (request.regular_expression && query.contains("\\n"));
+    let multiline_expression = if multiline {
+        let pattern = if request.regular_expression {
+            query.to_string()
+        } else {
+            regex::escape(query)
         };
-        let path = &indexed_file.path;
-        if !file_mask_allows(&masks, path) {
+        let pattern = if request.whole_words {
+            format!(r"\b(?:{pattern})\b")
+        } else {
+            pattern
+        };
+        let expression = RegexBuilder::new(&pattern)
+            .case_insensitive(!request.case_sensitive)
+            .multi_line(true)
+            .build()
+            .map_err(|error| {
+                CoreError::new(ErrorCode::ParseFailed, "Invalid search expression")
+                    .with_details(error.to_string())
+            })?;
+        Some(expression)
+    } else {
+        None
+    };
+    let mut candidates = candidates;
+    while matches.len() < limit && content_matches < content_limit {
+        crate::protocol::cancellation::check()?;
+        let Some(path) = candidates.next() else { break };
+        let path = path?;
+        if !file_mask_allows(&masks, &path) {
             continue;
         }
-        let file = root.join(path);
+        let file = root.join(&path);
         let Some(text) = read_searchable_text(&file) else {
             continue;
         };
+        if let Some(expression) = &multiline_expression {
+            // Normalize Windows line endings so a pasted multi-line query also
+            // matches CRLF files. Keep offsets local to the returned preview.
+            let text = text.replace("\r\n", "\n");
+            let mut previous_line = None;
+            for found in expression.find_iter(&text) {
+                crate::protocol::cancellation::check()?;
+                let line = text[..found.start()]
+                    .bytes()
+                    .filter(|byte| *byte == b'\n')
+                    .count()
+                    + 1;
+                if previous_line == Some(line) {
+                    continue;
+                }
+                previous_line = Some(line);
+                let start = text[..found.start()]
+                    .rfind('\n')
+                    .map_or(0, |offset| offset + 1);
+                let end = text[found.end()..]
+                    .find('\n')
+                    .map_or(text.len(), |offset| found.end() + offset);
+                matches.push(SearchMatch {
+                    kind: "content".to_string(),
+                    path: path.clone(),
+                    line: Some(line),
+                    preview: text[start..end].to_string(),
+                    symbol_name: None,
+                });
+                content_matches += 1;
+                if matches.len() >= limit || content_matches >= content_limit {
+                    break;
+                }
+            }
+            continue;
+        }
         for (index, line) in text.split('\n').enumerate() {
             crate::protocol::cancellation::check()?;
             if matcher.matches(line) {
@@ -258,7 +346,7 @@ fn search_with_index(
                     symbol_name: None,
                 });
                 content_matches += 1;
-                if matches.len() >= limit {
+                if matches.len() >= limit || content_matches >= content_limit {
                     break;
                 }
             }
@@ -787,13 +875,22 @@ fn parse_file_mask(mask: &str) -> Vec<String> {
         .collect()
 }
 
-/// Matches masks against the file name only and accepts any matching pattern.
+/// Applies positive file-name masks, then vetoes any matching exclusion mask.
 fn file_mask_allows(masks: &[String], path: &str) -> bool {
     if masks.is_empty() {
         return true;
     }
     let name = path.rsplit('/').next().unwrap_or(path);
-    masks.iter().any(|mask| glob_matches(mask, name))
+    let included = !masks.iter().any(|mask| !mask.starts_with('!'))
+        || masks
+            .iter()
+            .filter(|mask| !mask.starts_with('!'))
+            .any(|mask| glob_matches(mask, name));
+    included
+        && !masks
+            .iter()
+            .filter_map(|mask| mask.strip_prefix('!'))
+            .any(|mask| glob_matches(mask, name))
 }
 
 fn glob_matches(pattern: &str, value: &str) -> bool {
@@ -843,7 +940,11 @@ impl Matcher {
         regular_expression: bool,
     ) -> Result<Self, CoreError> {
         if regular_expression {
-            let pattern = query.to_string();
+            let pattern = if whole_words {
+                format!(r"\b(?:{query})\b")
+            } else {
+                query.to_string()
+            };
             let regex = RegexBuilder::new(&pattern)
                 .case_insensitive(!case_sensitive)
                 .build()
@@ -1055,4 +1156,58 @@ pub(crate) fn is_plain_text(text: &str) -> bool {
 
 fn is_word_character(character: char) -> bool {
     character.is_ascii_alphanumeric() || character == '_' || character == '$'
+}
+
+#[cfg(test)]
+mod bounded_content_search_tests {
+    use super::*;
+
+    struct Fixture(PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if let Err(error) = fs::remove_dir_all(&self.0) {
+                eprintln!("Could not remove bounded search fixture: {error}");
+            }
+        }
+    }
+
+    #[test]
+    fn filled_content_budget_does_not_advance_to_the_next_path() {
+        let root = std::env::temp_dir().join(format!(
+            "lithe-bounded-content-search-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("fixture directory");
+        let fixture = Fixture(root);
+        fs::write(fixture.0.join("first.txt"), "needle\nneedle\n").expect("fixture text");
+        let request: SearchRequest = serde_json::from_value(serde_json::json!({
+            "root": fixture.0, "query": "needle", "maxResults": 1, "maxFileResults": 0
+        }))
+        .expect("request");
+        // A traversal error after the first hit must never be requested once
+        // the result budget is full; an eager scan would fail this query.
+        let candidates = [
+            Ok("first.txt".to_string()),
+            Err(CoreError::new(ErrorCode::Unknown, "unvisited subtree")),
+        ];
+        let response =
+            search_with_paths(&fixture.0, &request, "needle", &[], candidates.into_iter())
+                .expect("bounded result without visiting the next subtree");
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].line, Some(1));
+    }
+
+    #[test]
+    fn empty_content_budget_does_not_advance_the_traversal() {
+        let request: SearchRequest = serde_json::from_value(serde_json::json!({
+            "root": ".", "query": "needle", "maxFileResults": 0, "maxContentResults": 0
+        }))
+        .expect("request");
+        let candidates =
+            std::iter::once(Err(CoreError::new(ErrorCode::Unknown, "unvisited subtree")));
+        let response = search_with_paths(Path::new("."), &request, "needle", &[], candidates)
+            .expect("no traversal for an empty content budget");
+        assert!(response.matches.is_empty());
+    }
 }

@@ -484,12 +484,79 @@ fn maven_dependency_plan_is_fixed_and_module_scoped() {
             "-Duser.country=US"
         ])
     );
+    let budget: Value = serde_json::from_str(include_str!(
+        "../../../../shared/fixtures/maven/dependency-output-budget-v1.json"
+    ))
+    .expect("dependency output budget fixture");
+    assert_eq!(
+        response["data"]["outputByteLimit"],
+        budget["outputByteLimit"]
+    );
     assert!(!response["data"]["arguments"]
         .as_array()
         .expect("arguments should be an array")
         .iter()
         .any(|argument| argument == "-am"));
     fs::remove_dir_all(root).expect("Maven dependency-plan fixture should be removable");
+}
+
+#[test]
+fn maven_dependency_plan_selects_only_the_root_project() {
+    let root = temporary_root("maven-dependency-root-plan");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("pom.xml"),
+        "<project><artifactId>demo</artifactId></project>",
+    )
+    .unwrap();
+    for module in [serde_json::Value::Null, serde_json::json!(".")] {
+        let response: Value = serde_json::from_str(&execute_json(&serde_json::json!({
+            "id": "root-plan", "command": "maven.dependencyPlan",
+            "payload": {"root": root, "context": {"version": 1, "reactorPath": "."}, "module": module}
+        }).to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        let args = response["data"]["arguments"].as_array().unwrap();
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-pl" && pair[1] == "."));
+        assert!(!args.iter().any(|arg| arg == "-am"));
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn maven_dependencies_handle_mvnd_labels_without_false_empty_results() {
+    let parse = |output: &str| -> Value {
+        serde_json::from_str(&execute_json(
+            &serde_json::json!({
+                "id": "mvnd-tree", "command": "maven.dependencies",
+                "payload": {"modulePath": "service", "output": output}
+            })
+            .to_string(),
+        ))
+        .unwrap()
+    };
+    let tree = "[service] [INFO] +- org.example:library:jar:1.0:compile\n[service] [INFO] |  \\- org.example:child:jar:2.0:runtime\n";
+    let response = parse(tree);
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["data"]["dependencies"][0]["artifactId"], "library");
+    assert_eq!(
+        response["data"]["dependencies"][0]["children"][0]["artifactId"],
+        "child"
+    );
+    // A reactor-wide log must never be attributed to the selected module.
+    for output in [
+        format!("{tree}[other] [INFO] +- org.example:other:jar:1.0:compile\n"),
+        "[unexpected logger] +- org.example:library:jar:1.0:compile".to_string(),
+        "[INFO] +- invalid-coordinate".to_string(),
+    ] {
+        let response = parse(&output);
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["code"], "parse_failed", "{response}");
+    }
+    let empty = parse("[INFO] org.example:parent:pom:1.0\n[INFO] BUILD SUCCESS\n");
+    assert_eq!(empty["ok"], true, "{empty}");
+    assert_eq!(empty["data"]["dependencies"], serde_json::json!([]));
 }
 
 #[test]
@@ -516,8 +583,54 @@ fn maven_dependencies_match_the_shared_compatibility_fixture() {
 }
 
 #[test]
+fn maven_dependencies_accept_large_verbose_trees_and_exact_byte_budget() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../shared/fixtures/maven/dependency-output-budget-v1.json"
+    ))
+    .expect("dependency output budget fixture");
+    let count = fixture["nodeCount"].as_u64().unwrap() as usize;
+    let output = (0..count)
+        .map(|index| {
+            format!(
+                "{}{}{}",
+                fixture["linePrefix"].as_str().unwrap(),
+                index,
+                fixture["lineSuffix"].as_str().unwrap()
+            )
+        })
+        .collect::<String>();
+    assert!(
+        output.len() > 500_000,
+        "fixture must exceed the old console-sized budget"
+    );
+    let limit = fixture["outputByteLimit"].as_u64().unwrap() as usize;
+    // Retain the tree when unrelated Maven logging fills the remaining budget.
+    let output = format!("{}{}", output, "x".repeat(limit - output.len()));
+    let response: Value = serde_json::from_str(&execute_json(
+        &serde_json::json!({
+            "id": "large-tree", "command": "maven.dependencies",
+            "payload": {"modulePath": ".", "output": output}
+        })
+        .to_string(),
+    ))
+    .expect("large dependency response");
+    assert_eq!(response["ok"], true, "{response}");
+    let nodes = response["data"]["dependencies"].as_array().unwrap();
+    assert_eq!(nodes.len(), count);
+    assert!(nodes
+        .iter()
+        .any(|node| node["artifactId"] == format!("library-{}", count - 1)));
+}
+
+#[test]
 fn maven_dependencies_reject_bounded_output_node_and_depth_overflow() {
-    let oversized_output = "x".repeat(500_001);
+    let budget: Value = serde_json::from_str(include_str!(
+        "../../../../shared/fixtures/maven/dependency-output-budget-v1.json"
+    ))
+    .expect("dependency output budget fixture");
+    let limit = budget["outputByteLimit"].as_u64().unwrap() as usize;
+    // Multibyte input must be bounded in UTF-8 bytes, not scalar values.
+    let oversized_output = "😀".repeat(limit / 4 + 1);
     let too_many_nodes = (0..10_001)
         .map(|index| format!("[INFO] +- example:dependency-{index}:jar:1:compile"))
         .collect::<Vec<_>>()
@@ -540,6 +653,13 @@ fn maven_dependencies_reject_bounded_output_node_and_depth_overflow() {
         .expect("bounded Maven dependency response should be JSON");
         assert_eq!(response["ok"], false, "case {name}: {response}");
         assert_eq!(response["error"]["code"], "parse_failed", "case {name}");
+        let expected_detail = match name {
+            "output" => format!("maximumBytes={limit}"),
+            "nodes" => "maximumNodes=10000".to_string(),
+            "depth" => "maximumDepth=64".to_string(),
+            _ => unreachable!(),
+        };
+        assert_eq!(response["error"]["details"], expected_detail, "case {name}");
     }
 }
 
@@ -1285,6 +1405,60 @@ fn maven_installation_settings_reach_jdt_for_a_home_or_a_launcher() {
         );
     }
     fs::remove_dir_all(root).expect("Maven fixture should be removable");
+}
+
+#[test]
+fn mvnd_installation_settings_reach_jdt_from_home_bin_and_launcher() {
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if let Err(error) = fs::remove_dir_all(&self.0) {
+                eprintln!("Could not clean mvnd settings fixture: {error}");
+            }
+        }
+    }
+    let fixture = Fixture(maven_reactor_root("mvnd-jdt-settings"));
+    let home = fixture.0.join("maven daemon");
+    fs::create_dir_all(home.join("bin")).unwrap();
+    fs::create_dir_all(home.join("mvn/conf")).unwrap();
+    fs::create_dir_all(home.join("conf")).unwrap();
+    let launcher = home.join("bin/mvnd.exe");
+    fs::write(&launcher, "fixture; never executed").unwrap();
+    let settings = home.join("mvn").join("conf").join("settings.xml");
+    fs::write(&settings, "<settings/>").unwrap();
+    // The daemon's conf is not the embedded Maven installation's conf.
+    fs::write(home.join("conf/settings.xml"), "<settings/>").unwrap();
+    for configured in [home.clone(), home.join("bin"), launcher] {
+        let configuration = jdt_configuration(
+            fixture.0.to_str().unwrap(),
+            maven_jdt_context(Some(configured.to_string_lossy().into_owned())),
+        )
+        .unwrap();
+        assert_eq!(
+            configuration.global_settings_path.as_deref(),
+            settings.to_str()
+        );
+    }
+    // Explicit ordinary Maven must not inherit the adjacent daemon's settings.
+    let maven_launcher = home.join("bin").join("mvn.cmd");
+    fs::write(&maven_launcher, "fixture; never executed").unwrap();
+    let configuration = jdt_configuration(
+        fixture.0.to_str().unwrap(),
+        maven_jdt_context(Some(maven_launcher.to_string_lossy().into_owned())),
+    )
+    .unwrap();
+    let maven_settings = home.join("conf").join("settings.xml");
+    assert_eq!(
+        configuration.global_settings_path.as_deref(),
+        maven_settings.to_str()
+    );
+    fs::remove_file(settings).unwrap();
+    let configuration = jdt_configuration(
+        fixture.0.to_str().unwrap(),
+        maven_jdt_context(Some(home.to_string_lossy().into_owned())),
+    )
+    .unwrap();
+    assert_eq!(configuration.global_settings_path, None);
 }
 
 #[test]
