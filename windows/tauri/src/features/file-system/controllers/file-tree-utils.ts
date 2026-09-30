@@ -1,5 +1,6 @@
 import type { FileEntry } from "../types/app.types";
 import { getDirName } from "@/utils/path-helpers";
+import { isDraft } from "immer";
 
 export function sortFileEntries(entries: FileEntry[]): FileEntry[] {
   return entries.sort((a, b) => {
@@ -12,17 +13,34 @@ export function sortFileEntries(entries: FileEntry[]): FileEntry[] {
   });
 }
 
-export function findFileInTree(files: FileEntry[], targetPath: string): FileEntry | null {
-  for (const file of files) {
-    if (file.path === targetPath) {
-      return file;
-    }
-    if (file.children) {
-      const found = findFileInTree(file.children, targetPath);
-      if (found) return found;
-    }
+// Immutable sibling arrays share their path index until that level changes.
+// A lookup follows ancestors rather than inspecting every loaded descendant.
+const siblingIndexes = new WeakMap<FileEntry[], Map<string, number>>();
+
+function indexOfAncestor(files: FileEntry[], targetPath: string): number | undefined {
+  const cacheable = !isDraft(files);
+  let index = cacheable ? siblingIndexes.get(files) : undefined;
+  if (!index) {
+    index = new Map(files.map((file, position) => [file.path, position]));
+    if (cacheable) siblingIndexes.set(files, index);
   }
-  return null;
+  let path = targetPath;
+  while (path) {
+    const position = index.get(path);
+    if (position !== undefined) return position;
+    const parent = getDirName(path);
+    if (parent === path) break;
+    path = parent;
+  }
+  return undefined;
+}
+
+export function findFileInTree(files: FileEntry[], targetPath: string): FileEntry | null {
+  const position = indexOfAncestor(files, targetPath);
+  if (position === undefined) return null;
+  const file = files[position];
+  if (file.path === targetPath) return file;
+  return file.children ? findFileInTree(file.children, targetPath) : null;
 }
 
 export function updateFileInTree(
@@ -30,26 +48,20 @@ export function updateFileInTree(
   targetPath: string,
   updater: (file: FileEntry) => FileEntry,
 ): FileEntry[] {
-  let changed = false;
-  const updatedFiles = files.map((file) => {
-    if (file.path === targetPath) {
-      const updatedFile = updater(file);
-      if (updatedFile !== file) changed = true;
-      return updatedFile;
-    }
-    if (file.children) {
-      const updatedChildren = updateFileInTree(file.children, targetPath, updater);
-      if (updatedChildren !== file.children) {
-        changed = true;
-        return {
-          ...file,
-          children: updatedChildren,
-        };
-      }
-    }
-    return file;
-  });
-  return changed ? updatedFiles : files;
+  const position = indexOfAncestor(files, targetPath);
+  if (position === undefined) return files;
+  const file = files[position];
+  let updatedFile = file;
+  if (file.path === targetPath) {
+    updatedFile = updater(file);
+  } else if (file.children) {
+    const children = updateFileInTree(file.children, targetPath, updater);
+    if (children !== file.children) updatedFile = { ...file, children };
+  }
+  if (updatedFile === file) return files;
+  const updatedFiles = files.slice();
+  updatedFiles[position] = updatedFile;
+  return updatedFiles;
 }
 
 export function getCompactFolderChild(item: FileEntry): FileEntry | null {
@@ -84,7 +96,7 @@ export async function loadFolderExpansion(
     if (!folder?.isDir) break;
 
     let children = folder.children;
-    if (!children || children.length === 0) {
+    if (children === undefined) {
       children = await readChildren(currentPath);
       loadedChildren.set(currentPath, children);
       nextFiles = updateFileInTree(nextFiles, currentPath, (item) => ({ ...item, children }));

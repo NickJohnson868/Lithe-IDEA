@@ -19,6 +19,7 @@ export class WorkspaceRuntimeRegistry {
   private readonly runtimes = new Map<string, WorkspaceRuntime>();
   private readonly storeFactories = new Map<string, WorkspaceStoreFactory>();
   private readonly listeners = new Set<WorkspaceChangeListener>();
+  private storeNotificationQueued = false;
 
   constructor() {
     this.ensureWorkspace(welcomeWorkspace, "empty");
@@ -66,6 +67,7 @@ export class WorkspaceRuntimeRegistry {
       return;
     }
 
+    if (runtime.status === status && runtime.error === error) return;
     runtime.status = status;
     runtime.error = error;
     // Workspace-scoped controllers (Git, watchers, and language tooling) use
@@ -124,7 +126,15 @@ export class WorkspaceRuntimeRegistry {
 
     const store = factory(workspaceId);
     runtime.stores.set(key, store);
-    this.emitChange();
+    // Hooks can read a lazily registered store during render. Bind cross-store
+    // observers after the stack unwinds, never update other components here.
+    if (!this.storeNotificationQueued) {
+      this.storeNotificationQueued = true;
+      queueMicrotask(() => {
+        this.storeNotificationQueued = false;
+        this.emitChange();
+      });
+    }
     return store as StoreApi<T>;
   }
 

@@ -65,7 +65,8 @@
       },
       "windows": {
         "evidence": [
-          "windows/tauri/src/features/workspace"
+          "windows/tauri/src/features/workspace",
+          "windows/tauri/src/features/workspace/runtime/workspace-runtime-registry.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
@@ -1260,13 +1261,15 @@
           "windows/tauri/src/features/file-explorer",
           "windows/tauri/src/features/sidebar",
           "windows/tauri/src/features/file-explorer/stores/file-explorer-tree.store.test.ts",
-          "windows/tauri/vite.config.ts"
+          "windows/tauri/vite.config.ts",
+          "windows/tauri/src/features/file-system/controllers/directory-load-controller.test.ts",
+          "windows/tauri/src/features/file-system/controllers/file-tree-utils.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Workspace",
-      "verification": "浏览目录、展开/折叠、打开资源并在文件变更后刷新树。"
+      "verification": "浏览目录、展开/折叠、打开资源并在文件变更后刷新树。 Windows 验证展开中收缩、空目录缓存、紧凑链、预加载最多两个并发目录，以及切换工作区后旧读取不写回。"
     },
     {
       "id": "dependency-browser",

@@ -22,6 +22,7 @@ import { fileOpenBenchmark } from "@/features/editor/utils/file-open-benchmark";
 import { getLineSlice } from "@/features/editor/utils/large-file";
 import { getAncestorDirectoryPaths } from "@/features/file-explorer/utils/file-explorer-tree-utils";
 import { useFileTreeStore } from "@/features/file-explorer/stores/file-explorer-tree.store";
+import { createDirectoryLoadController } from "@/features/file-system/controllers/directory-load-controller";
 import { createProjectFileScanCoordinator } from "@/features/file-system/controllers/project-file-scan-coordinator";
 import { useGitBlameStore } from "@/features/git/stores/git-blame.store";
 import { useGitStore } from "@/features/git/stores/git.store";
@@ -85,7 +86,6 @@ import {
 import {
   addFileToTree,
   findFileInTree,
-  loadFolderExpansion,
   removeFileFromTree,
   sortFileEntries,
   updateFileInTree,
@@ -796,7 +796,8 @@ const createFileSystemStore = (workspaceId: string): StoreApi<ScopedFileSystemSt
   let deferredAiSession: ReturnType<typeof readPersistedAiWorkspaceSession> | undefined;
   const coordinateProjectFileScan = createProjectFileScanCoordinator<FileEntry[]>();
 
-  return createStore<ScopedFileSystemStoreState>()(
+  let directories!: ReturnType<typeof createDirectoryLoadController>;
+  const store = createStore<ScopedFileSystemStoreState>()(
     immer((set, get) => ({
       // State
       files: [],
@@ -1976,48 +1977,30 @@ const createFileSystemStore = (workspaceId: string): StoreApi<ScopedFileSystemSt
       },
 
       toggleFolder: async (path: string) => {
-        const folder = findFileInTree(get().files, path);
-        if (!folder || !folder.isDir) return;
-
+        if (!findFileInTree(get().files, path)?.isDir) return;
         const uiActions = useFileTreeStore.getStore(workspaceId).getState().actions;
-        const isCurrentlyExpanded = uiActions.isExpanded(path);
-
-        if (!isCurrentlyExpanded) {
-          const expansion = await loadFolderExpansion(
-            get().files,
+        if (uiActions.isExpanded(path)) {
+          directories.collapse(path);
+          uiActions.collapsePath(path);
+          return path;
+        }
+        const startedAt = performance.now();
+        try {
+          const finalPath = await directories.expand(
             path,
             useSettingsStore.getState().settings.compactFoldersInFileTree,
-            (directoryPath) =>
-              readProviderDirectoryEntries(directoryPath, get().rootFolderPath ?? directoryPath),
           );
-
-          if (expansion.loadedChildren.size > 0) {
-            set((state) => {
-              let updatedFiles = state.files;
-              for (const [directoryPath, children] of expansion.loadedChildren) {
-                updatedFiles = updateFileInTree(updatedFiles, directoryPath, (item) => ({
-                  ...item,
-                  children,
-                }));
-              }
-              if (updatedFiles !== state.files) {
-                state.files = updatedFiles;
-                state.filesVersion++;
-              }
-            });
+          frontendTrace("info", "file-tree", "expand:ready", {
+            path, durationMs: performance.now() - startedAt,
+          });
+          if (uiActions.isExpanded(path)) void directories.preload(finalPath, 2, 80);
+          return finalPath;
+        } catch (error) {
+          if (uiActions.isExpanded(path)) {
+            uiActions.collapsePath(path);
+            console.error("Failed to expand directory:", path, error);
+            toast.error(String(error));
           }
-
-          const expandedPaths = new Set(uiActions.getExpandedPaths());
-          expansion.expandedPaths.forEach((expandedPath) => expandedPaths.add(expandedPath));
-          uiActions.setExpandedPaths(expandedPaths);
-          // Preload deeper children in background for snappier navigation
-          get()
-            .preloadSubtree(expansion.finalPath, 2, 80)
-            .catch(() => {});
-          return expansion.finalPath;
-        } else {
-          // Collapse: only toggle UI state; keep children cached
-          uiActions.toggleFolder(path);
           return path;
         }
       },
@@ -2041,7 +2024,7 @@ const createFileSystemStore = (workspaceId: string): StoreApi<ScopedFileSystemSt
             expandedPathsChanged = true;
           }
 
-          if (!node.children || node.children.length === 0) {
+          if (node.children === undefined) {
             const childEntries = await readProviderDirectoryEntries(
               ancestorPath,
               get().rootFolderPath ?? ancestorPath,
@@ -2079,76 +2062,8 @@ const createFileSystemStore = (workspaceId: string): StoreApi<ScopedFileSystemSt
         }
       },
 
-      // Preload subtree children up to a depth and directory budget
-      preloadSubtree: async (rootPath: string, maxDepth = 2, maxDirs = 80) => {
-        const visited = new Set<string>();
-        type QueueItem = {
-          path: string;
-          depth: number;
-        };
-        const q: QueueItem[] = [];
-
-        q.push({
-          path: rootPath,
-          depth: 0,
-        });
-        let processed = 0;
-
-        while (q.length && processed < maxDirs) {
-          const batch = q.splice(0, 8);
-          await Promise.all(
-            batch.map(async (item) => {
-              if (visited.has(item.path) || item.depth >= maxDepth) return;
-              visited.add(item.path);
-              processed++;
-
-              try {
-                // Skip if children already present
-                const node = findFileInTree(get().files, item.path);
-                if (!node || !node.isDir) return;
-                if (node.children && node.children.length > 0) {
-                  // Still enqueue subdirs to continue traversal
-                  node.children
-                    ?.filter((c) => c.isDir)
-                    .forEach((c) =>
-                      q.push({
-                        path: c.path,
-                        depth: item.depth + 1,
-                      }),
-                    );
-                  return;
-                }
-
-                const children = await readProviderDirectoryEntries(
-                  item.path,
-                  get().rootFolderPath ?? item.path,
-                );
-
-                set((state) => {
-                  state.files = updateFileInTree(state.files, item.path, (it) => ({
-                    ...it,
-                    children,
-                  }));
-                  state.filesVersion++;
-                });
-
-                // Enqueue subdirs
-                children
-                  .filter((c) => c.isDir)
-                  .forEach((c) =>
-                    q.push({
-                      path: c.path,
-                      depth: item.depth + 1,
-                    }),
-                  );
-              } catch {}
-            }),
-          );
-
-          // Yield to UI
-          await new Promise((r) => setTimeout(r, 0));
-        }
-      },
+      preloadSubtree: (rootPath: string, maxDepth = 2, maxDirs = 80) =>
+        directories.preload(rootPath, maxDepth, maxDirs),
 
       handleCreateNewFile: async () => {
         const t = getCurrentTranslator();
@@ -3125,6 +3040,43 @@ const createFileSystemStore = (workspaceId: string): StoreApi<ScopedFileSystemSt
       },
     })),
   );
+  const treeActions = () => useFileTreeStore.getStore(workspaceId).getState().actions;
+  directories = createDirectoryLoadController({
+    find: (path) => findFileInTree(store.getState().files, path),
+    read: (path) => readProviderDirectoryEntries(path, store.getState().rootFolderPath ?? path),
+    apply: (path, children) => store.setState((state) => ({
+      files: updateFileInTree(state.files, path, (node) => ({ ...node, children })),
+      filesVersion: state.filesVersion + 1,
+    })),
+    isExpanded: (path) => treeActions().isExpanded(path),
+    expand: (path) => {
+      const actions = treeActions();
+      if (!actions.isExpanded(path)) actions.toggleFolder(path);
+    },
+    isActive: () => workspaceRuntimeRegistry.getActiveWorkspaceId() === workspaceId &&
+      workspaceRuntimeRegistry.hasWorkspace(workspaceId),
+    idle: waitForWorkspaceIdle,
+    reportError: (path, error) => console.warn("Directory prefetch failed:", path, error),
+  });
+  const unsubscribeStore = store.subscribe((state, previous) => {
+    if (state.rootFolderPath !== previous.rootFolderPath ||
+        state.workspaceFolders !== previous.workspaceFolders) {
+      directories.invalidate();
+      latestTreeRevealRequestId++;
+    }
+  });
+  const unsubscribeRuntime = workspaceRuntimeRegistry.subscribe(() => {
+    if (workspaceRuntimeRegistry.getActiveWorkspaceId() !== workspaceId) {
+      directories.invalidate();
+      latestTreeRevealRequestId++;
+    }
+    if (!workspaceRuntimeRegistry.hasWorkspace(workspaceId)) {
+      directories.invalidate();
+      unsubscribeStore();
+      unsubscribeRuntime();
+    }
+  });
+  return store;
 };
 
 scopedFileSystemStore = createWorkspaceScopedStore<ScopedFileSystemStoreState>(
