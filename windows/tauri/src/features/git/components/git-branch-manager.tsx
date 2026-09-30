@@ -20,12 +20,31 @@ import {
   CommandTabs,
   useCommandListNavigation,
 } from "@/ui/command";
-import { GitBranchIcon, FolderOpenIcon, GitMergeIcon, NodesIcon, DotsThreeIcon } from "@/ui/icons";
-import { showConfirmDialog } from "@/ui/dialog";
+import {
+  GitBranchIcon,
+  FolderOpenIcon,
+  GitMergeIcon,
+  NodesIcon,
+  CaretRightIcon,
+  TagIcon,
+  CaretDownIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  GitCommitIcon,
+} from "@/ui/icons";
+import { showConfirmDialog, showPromptDialog } from "@/ui/dialog";
 import { cn } from "@/utils/cn";
 import { getFolderName, getRelativePath } from "@/utils/path-helpers";
 import { matchesSearchQuery } from "@/utils/search-match";
-import { checkoutBranch, createBranch, deleteBranch, getBranches } from "../api/git-branches-api";
+import {
+  checkoutBranch,
+  checkoutGitReference,
+  checkoutReference,
+  createAndCheckoutBranch,
+  deleteBranch,
+} from "../api/git-branches-api";
+import { cancelGitHistoryOperation, getGitReferencesAtRoot } from "../api/git-commits-api";
+import { buildBranchMenuGroups } from "../utils/git-branch-menu";
 import { mergeBranch, rebaseOntoBranch, type IntegrationOutcome } from "../api/git-integration-api";
 import {
   DropdownMenu,
@@ -40,9 +59,14 @@ import { getWorktrees } from "../api/git-worktrees-api";
 import { showGitWorktreeDialog } from "../services/git-worktree-dialog-service";
 import { useRepositoryStore } from "../stores/git-repository.store";
 import { useGitBlameStore } from "../stores/git-blame.store";
-import type { GitWorktree } from "../types/git.types";
+import type { GitReference, GitReferenceSnapshot, GitWorktree } from "../types/git.types";
 import { isOpenableGitWorktree } from "../utils/git-worktree-open";
 import GitCommandSurface from "./git-command-surface";
+import { showGitPushDialog } from "../services/git-push-dialog-service";
+import { useGitPullWorkflow } from "../hooks/use-git-pull-workflow";
+import { useCommandShortcut } from "@/features/keymaps/hooks/use-command-shortcut";
+import { keybindingToDisplay } from "@/features/keymaps/utils/keybinding-display";
+import { openGitCommitPanel } from "../services/open-commit-panel";
 import { GitTrackingCounts } from "./git-tracking-counts";
 
 interface GitBranchManagerProps {
@@ -61,19 +85,6 @@ interface GitBranchManagerProps {
 type GitBranchManagerTab = "branches" | "worktrees" | "repositories";
 
 const gitCommandIconClassName = "size-3.5 shrink-0";
-
-function getFilteredBranches(branches: string[], currentBranch: string, query: string) {
-  const sorted = [...branches].sort((a, b) => {
-    if (a === currentBranch) return -1;
-    if (b === currentBranch) return 1;
-    return a.localeCompare(b);
-  });
-
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return sorted;
-
-  return sorted.filter((branch) => matchesSearchQuery(normalizedQuery, [branch]));
-}
 
 function getCreateBranchName(branches: string[], currentBranch: string, query: string) {
   const trimmedQuery = query.trim();
@@ -152,7 +163,15 @@ const GitBranchManager = ({
   triggerSurface = "default",
 }: GitBranchManagerProps) => {
   const { t } = useTranslation();
+  const blameActions = useGitBlameStore.use.actions();
   const [branches, setBranches] = useState<string[]>([]);
+  const [collapsedBranchGroups, setCollapsedBranchGroups] = useState<Set<string>>(new Set());
+  const [referenceSnapshot, setReferenceSnapshot] = useState<GitReferenceSnapshot>({
+    references: [],
+    recentReferences: [],
+  });
+  const branchOperationRef = useRef<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
   const [branchQuery, setBranchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<GitBranchManagerTab>("branches");
@@ -188,9 +207,16 @@ const GitBranchManager = ({
   const activeBranch = currentBranch ?? "";
   const triggerText = activeBranch;
   const triggerTextWidthCh = Math.min(Math.max(triggerText.length + 1, 6), 40);
-  const filteredBranches = useMemo(
-    () => getFilteredBranches(branches, activeBranch, branchQuery),
-    [activeBranch, branchQuery, branches],
+  const branchGroups = useMemo(
+    () => buildBranchMenuGroups(referenceSnapshot, branchQuery),
+    [referenceSnapshot, branchQuery],
+  );
+  const filteredReferences = useMemo(
+    () =>
+      branchGroups
+        .filter((group) => !collapsedBranchGroups.has(group.id))
+        .flatMap((group) => group.references),
+    [branchGroups, collapsedBranchGroups],
   );
   const createBranchName = useMemo(
     () => getCreateBranchName(branches, activeBranch, branchQuery),
@@ -213,13 +239,26 @@ const GitBranchManager = ({
     if (!repoPath) return;
 
     const requestId = ++branchLoadRequestIdRef.current;
+    if (branchOperationRef.current) void cancelGitHistoryOperation(branchOperationRef.current);
+    const operationId = crypto.randomUUID();
+    branchOperationRef.current = operationId;
     try {
-      const branchList = await getBranches(repoPath);
-      if (requestId === branchLoadRequestIdRef.current) {
-        setBranches(branchList);
+      const snapshot = await getGitReferencesAtRoot(repoPath, operationId);
+      if (requestId === branchLoadRequestIdRef.current && snapshot) {
+        setReferenceSnapshot(snapshot);
+        setSelectionError(null);
+        setBranches(
+          snapshot.references
+            .filter((reference) => reference.kind === "local")
+            .map((reference) => reference.shortName),
+        );
       }
     } catch (error) {
       console.error("Failed to load branches:", error);
+      if (requestId === branchLoadRequestIdRef.current)
+        setSelectionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (branchOperationRef.current === operationId) branchOperationRef.current = null;
     }
   }, [repoPath]);
 
@@ -244,6 +283,7 @@ const GitBranchManager = ({
     branchLoadRequestIdRef.current += 1;
     worktreeLoadRequestIdRef.current += 1;
     setBranches([]);
+    setReferenceSnapshot({ references: [], recentReferences: [] });
     setWorktrees([]);
     setIsLoadingWorktrees(false);
   }, [repoPath]);
@@ -251,9 +291,20 @@ const GitBranchManager = ({
   useEffect(() => {
     if (repoPath && isDropdownOpen) {
       void loadBranches();
-      void loadWorktrees();
     }
-  }, [repoPath, isDropdownOpen, loadBranches, loadWorktrees]);
+    return () => {
+      branchLoadRequestIdRef.current += 1;
+      if (branchOperationRef.current) void cancelGitHistoryOperation(branchOperationRef.current);
+      branchOperationRef.current = null;
+    };
+  }, [repoPath, isDropdownOpen, loadBranches]);
+
+  useEffect(() => {
+    if (repoPath && isDropdownOpen && activeTab === "worktrees") void loadWorktrees();
+    return () => {
+      worktreeLoadRequestIdRef.current += 1;
+    };
+  }, [repoPath, isDropdownOpen, activeTab, loadWorktrees]);
 
   useEffect(() => {
     const handleOpenFromPalette = (event: Event) => {
@@ -279,11 +330,16 @@ const GitBranchManager = ({
   }, [hasBlockingModalOpen, isDropdownOpen]);
 
   const handleBranchChange = async (branchName: string) => {
-    if (!repoPath || !branchName || branchName === currentBranch) return;
+    const reference = referenceSnapshot.references.find(
+      (entry) => entry.fullName === branchName || entry.shortName === branchName,
+    );
+    if (!repoPath || !branchName || reference?.isCurrent || branchName === currentBranch) return;
 
     setIsLoading(true);
     try {
-      const result = await checkoutBranch(repoPath, branchName);
+      const result = await (reference
+        ? checkoutGitReference(repoPath, reference)
+        : checkoutBranch(repoPath, branchName));
 
       if (result.hasChanges) {
         showToast({
@@ -300,9 +356,11 @@ const GitBranchManager = ({
                   true,
                 );
                 if (stashSuccess) {
-                  const retryResult = await checkoutBranch(repoPath, branchName);
+                  const retryResult = await (reference
+                    ? checkoutGitReference(repoPath, reference)
+                    : checkoutBranch(repoPath, branchName));
                   if (retryResult.success) {
-                    useGitBlameStore.getState().actions.clearAllBlame();
+                    blameActions.clearAllBlame();
                     showToast({
                       message: t("git.stashAndSwitchSuccess"),
                       type: "success",
@@ -326,7 +384,7 @@ const GitBranchManager = ({
           },
         });
       } else if (result.success) {
-        useGitBlameStore.getState().actions.clearAllBlame();
+        blameActions.clearAllBlame();
         setIsDropdownOpen(false);
         onBranchChange?.();
       } else {
@@ -444,12 +502,12 @@ const GitBranchManager = ({
 
     setIsLoading(true);
     try {
-      const success = await createBranch(repoPath, branchName.trim(), currentBranch);
-      if (success) {
-        setBranchQuery("");
-        setIsDropdownOpen(false);
-        onBranchChange?.();
-      }
+      await createAndCheckoutBranch(repoPath, branchName.trim(), "HEAD");
+      setBranchQuery("");
+      setIsDropdownOpen(false);
+      onBranchChange?.();
+    } catch (error) {
+      showToast({ message: error instanceof Error ? error.message : String(error), type: "error" });
     } finally {
       setIsLoading(false);
     }
@@ -523,23 +581,94 @@ const GitBranchManager = ({
     [focusCommandInput],
   );
 
-  const handleOpenDropdown = async () => {
+  const handleOpenDropdown = () => {
     if (!repoPath || isDropdownOpen) return;
     setActiveTab("branches");
     setIsDropdownOpen(true);
-    await Promise.all([loadBranches(), loadWorktrees()]);
+  };
+
+  const refreshBranchMenu = useCallback(async () => {
+    await loadBranches();
+    onBranchChange?.();
+  }, [loadBranches, onBranchChange]);
+  const pullWorkflow = useGitPullWorkflow({ repoPath: repoPath ?? "", refresh: refreshBranchMenu });
+  const commitShortcut = useCommandShortcut("git.commit");
+  const pushShortcut = useCommandShortcut("git.push");
+  const updateShortcut = useCommandShortcut("git.update");
+  const branchActions = [
+    {
+      id: "update",
+      label: t("git.branchPopup.update"),
+      icon: <ArrowDownIcon />,
+      shortcut: updateShortcut,
+    },
+    {
+      id: "commit",
+      label: `${t("git.commit")}...`,
+      icon: <GitCommitIcon />,
+      shortcut: commitShortcut,
+    },
+    { id: "push", label: `${t("git.push")}...`, icon: <ArrowUpIcon />, shortcut: pushShortcut },
+    {
+      id: "new",
+      label: `${t("git.newBranch")}...`,
+      icon: <Plus />,
+      shortcut: useCommandShortcut("git.newBranch"),
+    },
+    {
+      id: "checkout",
+      label: t("git.branchPopup.checkout"),
+      icon: <TagIcon />,
+      shortcut: undefined,
+    },
+  ].filter(
+    (action) =>
+      !branchQuery.trim() || matchesSearchQuery(branchQuery.trim().toLowerCase(), [action.label]),
+  );
+  const runBranchAction = async (id: string) => {
+    setIsDropdownOpen(false);
+    try {
+      if (id === "update") {
+        await pullWorkflow.pull();
+        return;
+      }
+      if (id === "commit") {
+        openGitCommitPanel();
+        return;
+      }
+      if (id === "push" && repoPath) {
+        await showGitPushDialog(repoPath);
+        return;
+      }
+      const value = await showPromptDialog(
+        id === "new" ? t("git.newBranch") : t("git.commitShaOrRef"),
+      );
+      if (!value?.trim() || !repoPath) return;
+      if (id === "new") await handleCreateBranch(value);
+      else {
+        const result = await checkoutReference(repoPath, value.trim());
+        if (result.success) onBranchChange?.();
+        else showToast({ message: result.message, type: "error" });
+      }
+    } catch (failure) {
+      showToast({
+        message: failure instanceof Error ? failure.message : String(failure),
+        type: "error",
+      });
+    }
   };
 
   const commandEntries = useMemo(
     () =>
       activeTab === "branches"
         ? [
+            ...branchActions.map((action) => ({ type: "action" as const, value: action.id })),
             ...(createBranchName
               ? [{ type: "create-branch" as const, value: createBranchName }]
               : []),
-            ...filteredBranches.map((branch) => ({
+            ...filteredReferences.map((reference) => ({
               type: "branch" as const,
-              value: branch,
+              value: reference.fullName,
             })),
           ]
         : activeTab === "worktrees"
@@ -563,9 +692,14 @@ const GitBranchManager = ({
             })),
     [
       activeTab,
+      branchActions,
+      branchQuery,
+      commitShortcut,
+      pushShortcut,
+      updateShortcut,
       createBranchName,
       createWorktreePath,
-      filteredBranches,
+      filteredReferences,
       filteredRepoPaths,
       filteredWorktrees,
     ],
@@ -576,7 +710,9 @@ const GitBranchManager = ({
       const selectedEntry = commandEntries[index];
       if (!selectedEntry) return;
 
-      if (selectedEntry.type === "create-branch") {
+      if (selectedEntry.type === "action") {
+        void runBranchAction(selectedEntry.value);
+      } else if (selectedEntry.type === "create-branch") {
         void handleCreateBranch(selectedEntry.value);
       } else if (selectedEntry.type === "create-worktree") {
         void handleCreateWorktree(selectedEntry.value);
@@ -597,7 +733,7 @@ const GitBranchManager = ({
     onInputKeyDown: handleCommandKeyDown,
   } = useCommandListNavigation({
     itemCount: commandEntries.length,
-    resetKey: `${activeTab}:${branchQuery}`,
+    resetKey: `${activeTab}:${branchQuery}:${commandEntries.map((entry) => entry.value).join("\0")}`,
     onSelect: handleCommandSelect,
   });
 
@@ -632,6 +768,7 @@ const GitBranchManager = ({
   return (
     <>
       <Button
+        ref={triggerRef}
         data-branch-manager-trigger="true"
         onClick={() => void handleOpenDropdown()}
         disabled={isLoading}
@@ -661,6 +798,7 @@ const GitBranchManager = ({
       </Button>
 
       <GitCommandSurface
+        anchorRef={triggerRef}
         isOpen={isDropdownOpen}
         onClose={closeDropdown}
         query={branchQuery}
@@ -669,7 +807,7 @@ const GitBranchManager = ({
         inputRef={commandInputRef}
         placeholder={
           activeTab === "branches"
-            ? t("git.searchBranches")
+            ? t("git.branchPopup.search")
             : activeTab === "worktrees"
               ? t("git.searchWorktrees")
               : t("git.filterRepositories")
@@ -690,13 +828,45 @@ const GitBranchManager = ({
         }
         headerAddon={<CommandTabs items={tabItems} ariaLabel={t("git.selectorSections")} />}
       >
+        {selectionError && activeTab === "branches" && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 px-3 py-2 text-destructive ui-text-sm"
+          >
+            <span className="min-w-0 flex-1">{selectionError}</span>
+            <Button variant="ghost" size="xs" onClick={() => void loadBranches()}>
+              {t("git.refresh")}
+            </Button>
+          </div>
+        )}
         <CommandList>
-          {activeTab === "branches" && !createBranchName && filteredBranches.length === 0 ? (
+          {activeTab === "branches" &&
+            branchActions.map((action, index) => (
+              <CommandItemRow
+                key={action.id}
+                as="div"
+                icon={action.icon}
+                title={action.label}
+                accessory={
+                  action.shortcut ? (
+                    <span>{keybindingToDisplay(action.shortcut).join("+")}</span>
+                  ) : null
+                }
+                isSelected={selectedIndex === index}
+                onMouseEnter={() => setSelectedIndex(index)}
+                onClick={() => void runBranchAction(action.id)}
+                disabled={isLoading || (action.id === "update" && pullWorkflow.isPullLocked)}
+              />
+            ))}
+          {activeTab === "branches" &&
+          !createBranchName &&
+          branchGroups.length === 0 &&
+          branchActions.length === 0 ? (
             <CommandEmpty>
               {branchQuery.trim() ? t("git.noMatchingBranches") : t("git.noBranchesFound")}
             </CommandEmpty>
           ) : null}
-          {activeTab === "branches" && (createBranchName || filteredBranches.length > 0) ? (
+          {activeTab === "branches" && (createBranchName || branchGroups.length > 0) ? (
             <div className="space-y-1">
               {createBranchName ? (
                 <CommandItemRow
@@ -705,25 +875,60 @@ const GitBranchManager = ({
                   title={t("git.createNewBranch", { name: createBranchName })}
                   onClick={() => void handleCreateBranch(createBranchName)}
                   disabled={isLoading}
-                  isSelected={selectedIndex === 0}
-                  onMouseEnter={() => setSelectedIndex(0)}
+                  isSelected={selectedIndex === branchActions.length}
+                  onMouseEnter={() => setSelectedIndex(branchActions.length)}
                   className="min-h-9"
                 />
               ) : null}
-              {filteredBranches.map((branch, index) => (
-                <BranchRow
-                  key={branch}
-                  branch={branch}
-                  isCurrent={branch === currentBranch}
-                  isSelected={selectedIndex === index + (createBranchName ? 1 : 0)}
-                  isLoading={isLoading}
-                  onMouseEnter={() => setSelectedIndex(index + (createBranchName ? 1 : 0))}
-                  onSelect={() => void handleBranchChange(branch)}
-                  onDelete={() => void handleDeleteBranch(branch)}
-                  onMerge={() => void handleIntegration(branch, "merge")}
-                  onRebase={() => void handleIntegration(branch, "rebase")}
-                />
-              ))}
+              {branchGroups.map((group) => {
+                const collapsed = collapsedBranchGroups.has(group.id);
+                return (
+                  <section key={group.id} className="border-t border-border py-2">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-muted-foreground"
+                      aria-expanded={!collapsed}
+                      onClick={() =>
+                        setCollapsedBranchGroups((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(group.id)) next.delete(group.id);
+                          else next.add(group.id);
+                          return next;
+                        })
+                      }
+                    >
+                      {collapsed ? (
+                        <CaretRightIcon className="size-3.5" />
+                      ) : (
+                        <CaretDownIcon className="size-3.5" />
+                      )}
+                      {t(`git.branchPopup.${group.id}`)}
+                    </button>
+                    {!collapsed &&
+                      group.references.map((reference) => {
+                        const index =
+                          filteredReferences.indexOf(reference) +
+                          branchActions.length +
+                          (createBranchName ? 1 : 0);
+                        return (
+                          <BranchRow
+                            key={`${group.id}:${reference.fullName}`}
+                            branch={reference.shortName}
+                            reference={reference}
+                            isCurrent={reference.isCurrent}
+                            isSelected={selectedIndex === index}
+                            isLoading={isLoading}
+                            onMouseEnter={() => setSelectedIndex(index)}
+                            onSelect={() => void handleBranchChange(reference.fullName)}
+                            onDelete={() => void handleDeleteBranch(reference.shortName)}
+                            onMerge={() => void handleIntegration(reference.shortName, "merge")}
+                            onRebase={() => void handleIntegration(reference.shortName, "rebase")}
+                          />
+                        );
+                      })}
+                  </section>
+                );
+              })}
             </div>
           ) : null}
           {activeTab === "worktrees" && !createWorktreePath && filteredWorktrees.length === 0 ? (
@@ -865,6 +1070,7 @@ const GitBranchManager = ({
 
 function BranchRow({
   branch,
+  reference,
   isCurrent,
   isSelected,
   isLoading,
@@ -875,6 +1081,7 @@ function BranchRow({
   onRebase,
 }: {
   branch: string;
+  reference: GitReference;
   isCurrent: boolean;
   isSelected: boolean;
   isLoading: boolean;
@@ -890,7 +1097,7 @@ function BranchRow({
       as="div"
       icon={
         isCurrent ? (
-          <Check className={cn(gitCommandIconClassName, "text-success")} />
+          <TagIcon className={cn(gitCommandIconClassName, "text-warning")} />
         ) : (
           <GitBranchIcon className={cn(gitCommandIconClassName, "text-subtle-foreground")} />
         )
@@ -905,7 +1112,17 @@ function BranchRow({
         isCurrent ? "text-foreground" : "text-subtle-foreground hover:text-foreground",
       )}
       accessory={
-        isCurrent ? <CommandItemBadge variant="success">{t("git.current")}</CommandItemBadge> : null
+        <div className="flex items-center gap-2 text-subtle-foreground">
+          <GitTrackingCounts
+            ahead={reference.ahead ?? 0}
+            behind={reference.behind ?? 0}
+            aheadLabel={t("git.aheadOfRemote", { count: reference.ahead ?? 0 })}
+            behindLabel={t("git.behindRemote", { count: reference.behind ?? 0 })}
+          />
+          {reference.upstreamShortName && (
+            <span className="truncate">{reference.upstreamShortName}</span>
+          )}
+        </div>
       }
       action={
         !isCurrent ? (
@@ -928,22 +1145,27 @@ function BranchRow({
                   />
                 }
               >
-                <DotsThreeIcon />
+                <CaretRightIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent className="min-w-64">
-                <DropdownMenuItem onClick={onMerge}>
-                  <GitMergeIcon className="size-3.5" />
-                  {t("git.mergeIntoCurrent")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onRebase}>
-                  <NodesIcon className="size-3.5" />
-                  {t("git.rebaseOntoThis")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onDelete} className="text-git-deleted">
-                  <Trash2 className="size-3.5" />
-                  {t("git.deleteBranch")}
-                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onSelect}>{t("git.checkout")}</DropdownMenuItem>
+                {reference.kind === "local" && (
+                  <>
+                    <DropdownMenuItem onClick={onMerge}>
+                      <GitMergeIcon className="size-3.5" />
+                      {t("git.mergeIntoCurrent")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onRebase}>
+                      <NodesIcon className="size-3.5" />
+                      {t("git.rebaseOntoThis")}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onDelete} className="text-git-deleted">
+                      <Trash2 className="size-3.5" />
+                      {t("git.deleteBranch")}
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

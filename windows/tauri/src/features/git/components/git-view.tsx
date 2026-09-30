@@ -12,6 +12,7 @@ import {
 } from "@/ui/icons";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@/i18n/locale-provider";
+import { useUIState } from "@/features/window/stores/ui-state.store";
 import { useSettingsStore } from "@/features/settings/stores/settings.store";
 import { Button } from "@/ui/button";
 import { CommandEmpty, CommandItemBadge, CommandItemRow, CommandList } from "@/ui/command";
@@ -140,6 +141,12 @@ const GitView = ({ repoPath, onFileSelect, isActive }: GitViewProps) => {
   const updateSetting = useSettingsStore((state) => state.actions.updateSetting);
   const [activeTab, setActiveTab] = useState<GitSidebarTab>("changes");
   const [commitFocusRequest, setCommitFocusRequest] = useState(0);
+  const requestedCommitFocus = useUIState((state) => state.gitCommitFocusRequest);
+  useEffect(() => {
+    if (!requestedCommitFocus) return;
+    setActiveTab("changes");
+    setCommitFocusRequest((request) => request + 1);
+  }, [requestedCommitFocus]);
   const commitSelectedPaths = useMemo(
     () => new Set(sourceControlSession?.commitSelectedPaths ?? []),
     [sourceControlSession],
@@ -640,7 +647,11 @@ const GitView = ({ repoPath, onFileSelect, isActive }: GitViewProps) => {
             {renderActionsButton()}
           </SidebarTitleBar>
           {repoPath ? (
-            <GitRepositoryEmptyState root={repoPath} context="changes" onRefresh={handleManualRefresh} />
+            <GitRepositoryEmptyState
+              root={repoPath}
+              context="changes"
+              onRefresh={handleManualRefresh}
+            />
           ) : (
             <Empty className="h-full">
               <EmptyHeader>
@@ -676,9 +687,17 @@ const GitView = ({ repoPath, onFileSelect, isActive }: GitViewProps) => {
 
   const showLoadError = hasLoadError || (activeTab === "history" && hasHistoryLoadError);
   const loadError = (
-    <div role="alert" className="flex items-center justify-between gap-2 p-3 ui-text-sm text-destructive">
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-2 p-3 ui-text-sm text-destructive"
+    >
       <span>{t(hasLoadError ? "git.statusLoadFailed" : "git.historyLoadFailed")}</span>
-      <Button size="xs" variant="ghost" disabled={isRefreshing} onClick={() => void handleManualRefresh()}>
+      <Button
+        size="xs"
+        variant="ghost"
+        disabled={isRefreshing}
+        onClick={() => void handleManualRefresh()}
+      >
         {t("git.log.retry")}
       </Button>
     </div>
@@ -691,7 +710,11 @@ const GitView = ({ repoPath, onFileSelect, isActive }: GitViewProps) => {
           <SidebarTitleBar title={t("workbench.sourceControl")}>
             {renderActionsButton()}
           </SidebarTitleBar>
-          <GitRepositoryEmptyState root={activeRepoPath} context="changes" onRefresh={handleManualRefresh} />
+          <GitRepositoryEmptyState
+            root={activeRepoPath}
+            context="changes"
+            onRefresh={handleManualRefresh}
+          />
         </SidebarPanel>
         {renderGitActionsMenu({ hasGitRepo: false, onRefresh: handleManualRefresh })}
       </>

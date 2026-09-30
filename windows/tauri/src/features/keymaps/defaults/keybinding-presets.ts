@@ -91,6 +91,10 @@ export const keybindingPresetDefinitions: Record<KeybindingPreset, KeybindingPre
       "workbench.toggleSidebar",
     ],
     overrides: [
+      { key: "cmd+k", command: "git.commit", source: "preset" },
+      { key: "cmd+shift+k", command: "git.push", source: "preset" },
+      { key: "cmd+t", command: "git.update", source: "preset" },
+      { key: "cmd+alt+n", command: "git.newBranch", source: "preset" },
       { key: "cmd+shift+a", command: "workbench.commandPalette", source: "preset" },
       { key: "cmd+shift+n", command: "file.quickOpen", source: "preset" },
       { key: "cmd+l", command: "editor.goToLine", source: "preset" },

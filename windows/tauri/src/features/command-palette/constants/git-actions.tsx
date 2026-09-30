@@ -16,6 +16,7 @@ import { getGitPullResultPresentation } from "@/features/git/utils/git-pull-resu
 import { useSettingsStore } from "@/features/settings/stores/settings.store";
 import { createTranslator } from "@/i18n/locale";
 import { showConfirmDialog, showPromptDialog } from "@/ui/dialog";
+import { openGitCommitPanel } from "@/features/git/services/open-commit-panel";
 import type { Action } from "../types/action.types";
 
 interface GitActionsParams {
@@ -320,30 +321,8 @@ export const createGitActions = (params: GitActionsParams): Action[] => {
       description: "Commit staged changes",
       icon: <GitCommit />,
       category: "Git",
-      action: async () => {
-        if (!repoPath) {
-          showToast({ message: t("git.noRepositoryOpen"), type: "error" });
-          onClose();
-          return;
-        }
-        const message = await showPromptDialog(t("git.enterCommitMessage"), {
-          title: t("git.commitChanges"),
-          placeholder: t("git.commitMessagePlaceholder"),
-        });
-        if (!message) {
-          onClose();
-          return;
-        }
-        try {
-          const success = await gitOperations.commitChanges(repoPath, message);
-          if (success) {
-            showToast({ message: t("git.changesCommitted"), type: "success" });
-          } else {
-            showToast({ message: t("git.commitChangesFailed"), type: "error" });
-          }
-        } catch (error) {
-          showToast({ message: t("git.operationError", { error: String(error) }), type: "error" });
-        }
+      action: () => {
+        openGitCommitPanel();
         onClose();
       },
     },

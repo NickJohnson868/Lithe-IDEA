@@ -6,6 +6,7 @@ import { workspaceSessionRepository } from "@/features/workspace/persistence/wor
 import { DEFAULT_PROJECT_UI_STATE } from "@/features/window/stores/workspace-ui-defaults";
 
 interface ViewState {
+  gitCommitFocusRequest: number;
   isGitViewActive: boolean;
   isGitHubPRsViewActive: boolean;
   activeSidebarView: SidebarView;
@@ -13,6 +14,7 @@ interface ViewState {
 }
 
 interface ViewActions {
+  requestGitCommitPanel: () => void;
   setActiveView: (view: SidebarView) => void;
   setActiveRightSidebarView: (view: SidebarView) => void;
 }
@@ -20,6 +22,11 @@ interface ViewActions {
 export type ViewSlice = ViewState & ViewActions;
 
 export const createViewSlice: StateCreator<ViewSlice, [], [], ViewSlice> = (set, get) => ({
+  gitCommitFocusRequest: 0,
+  requestGitCommitPanel: () => {
+    get().setActiveView("git");
+    set({ gitCommitFocusRequest: get().gitCommitFocusRequest + 1 });
+  },
   isGitViewActive: false,
   isGitHubPRsViewActive: false,
   activeSidebarView: "files",

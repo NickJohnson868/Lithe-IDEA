@@ -330,13 +330,14 @@
       "windows": {
         "evidence": [
           "windows/tauri/src/features/git",
-          "shared/contracts/application-boundary.md"
+          "shared/contracts/application-boundary.md",
+          "windows/tauri/src/features/git/services/open-commit-panel.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Git",
-      "verification": "修改、暂存、取消暂存并提交文件，确认状态、提交消息和错误回显。"
+      "verification": "修改、暂存、取消暂存并提交文件，确认状态、提交消息和错误回显。 从分支菜单和快捷键打开尚未挂载的 Commit 面板；保留未选中及已有暂存内容，验证 Commit and Push 失败状态。"
     },
     {
       "id": "git-branches-remotes",
@@ -352,13 +353,14 @@
       },
       "windows": {
         "evidence": [
-          "windows/tauri/src/features/git"
+          "windows/tauri/src/features/git",
+          "windows/tauri/src/features/git/utils/git-branch-menu.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Git",
-      "verification": "创建、切换、合并分支并查看标签和远程，确认冲突与认证失败可恢复。"
+      "verification": "创建、切换、合并分支并查看标签和远程，确认冲突与认证失败可恢复。 核对最近/本地/远程分组、跟踪计数、搜索动作及关闭后迟到响应，折叠所有分组后仍能展开。"
     },
     {
       "id": "git-diff-review",
@@ -376,13 +378,15 @@
       "windows": {
         "evidence": [
           "windows/tauri/src/features/git",
-          "windows/tauri/src/features/viewer"
+          "windows/tauri/src/features/viewer",
+          "windows/tauri/src/features/git/hooks/git-diff-load-controller.test.ts",
+          "windows/tauri/src/features/git/utils/request-generation.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Git",
-      "verification": "验证新增、删除、重命名、二进制和多文件 Diff 的展示与定位。"
+      "verification": "验证新增、删除、重命名、二进制和多文件 Diff 的展示与定位。 快速切换文件和工作区、严格模式重新连接，确认迟到读取不关闭新文件；验证上一处/下一处修改导航。"
     },
     {
       "id": "git-history",
@@ -398,13 +402,14 @@
       },
       "windows": {
         "evidence": [
-          "windows/tauri/src/features/git"
+          "windows/tauri/src/features/git",
+          "windows/tauri/src/features/git/hooks/use-git-diff-actions.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Git",
-      "verification": "分页浏览提交历史、分支图谱和提交详情，确认日期、作者和文件列表一致。"
+      "verification": "分页浏览提交历史、分支图谱和提交详情，确认日期、作者和文件列表一致。 连续选择提交、分支和工作区比较，旧结果与旧错误不打开新项目页面。"
     },
     {
       "id": "git-rebase-stash",
@@ -655,13 +660,14 @@
       "windows": {
         "evidence": [
           "windows/tauri/src/features/maven",
-          "windows/tauri/src/features/workspace"
+          "windows/tauri/src/features/workspace",
+          "windows/tauri/src/features/maven/stores/maven.store.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Java / Maven",
-      "verification": "使用单模块、多模块和非标准源码目录 fixture 对比项目模型。"
+      "verification": "使用单模块、多模块和非标准源码目录 fixture 对比项目模型。 状态初始化不提前加载编辑器界面；启动时等待原有保存流程，保存失败阻止执行。"
     },
     {
       "id": "java-maven-profiles-dependencies",
@@ -1430,13 +1436,15 @@
       },
       "windows": {
         "evidence": [
-          "windows/tauri/src/features/keymaps"
+          "windows/tauri/src/features/keymaps",
+          "windows/tauri/src/features/keymaps/commands/git-command-actions.ts",
+          "windows/tauri/src/features/keymaps/defaults/default-keymaps.git-log.test.ts"
         ],
         "implementationStatus": "partial",
         "verificationStatus": "pending"
       },
       "owner": "Settings",
-      "verification": "修改快捷键、制造冲突并恢复默认，确认命令实际执行。",
+      "verification": "修改快捷键、制造冲突并恢复默认，确认命令实际执行。 JetBrains 预设核对 Commit/Push/Update/New Branch 快捷键及用户覆盖优先级。",
       "notes": "Windows 快捷键设置仍有占位交互，见 #718。"
     },
     {

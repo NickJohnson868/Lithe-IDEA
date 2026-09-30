@@ -13,10 +13,15 @@ import { useFileSystemStore } from "@/features/file-system/stores/file-system.st
 import { useTranslation } from "@/i18n/locale-provider";
 import { joinPath } from "@/utils/path-helpers";
 import { stageHunk, unstageHunk } from "../../api/git-status-api";
-import { createMonacoDiffHunkActions, type DiffStagingContext } from "../../utils/monaco-diff-hunk-actions";
+import {
+  createMonacoDiffHunkActions,
+  type DiffStagingContext,
+} from "../../utils/monaco-diff-hunk-actions";
 import { monacoDiffRows } from "../../utils/monaco-diff-rows";
 import type { GitDiff } from "../../types/git.types";
 import type { MultiDiffSearchMatch } from "../../utils/multi-diff-search";
+import { Button } from "@/ui/button";
+import { CaretUpIcon, CaretDownIcon } from "@/ui/icons";
 
 interface Props {
   diff: GitDiff;
@@ -31,8 +36,15 @@ interface Props {
 const MIN_REVIEW_HEIGHT = 160;
 const MAX_EMBEDDED_REVIEW_HEIGHT = 760;
 const noMatches: MultiDiffSearchMatch[] = [];
-export default function MonacoGitDiff({ diff, viewMode = "split", showWhitespace = false,
-  embedded = false, staging, searchMatches = noMatches, currentSearchMatch = null }: Props) {
+export default function MonacoGitDiff({
+  diff,
+  viewMode = "split",
+  showWhitespace = false,
+  embedded = false,
+  staging,
+  searchMatches = noMatches,
+  currentSearchMatch = null,
+}: Props) {
   const { t } = useTranslation();
   const container = useRef<HTMLDivElement>(null);
   const review = useRef<ReturnType<typeof mountDiffReview> | null>(null);
@@ -47,7 +59,15 @@ export default function MonacoGitDiff({ diff, viewMode = "split", showWhitespace
   const repoPath = staging?.repoPath;
   const isStaged = staging?.isStaged ?? false;
   const actionTitle = isStaged ? t("git.diff.unstage") : t("git.diff.stage");
-  const { fontSize, fontFamily, lineHeight, tabSize, themeId, editorItalicComments, editorFontLigatures } = useMonacoEditorSettings();
+  const {
+    fontSize,
+    fontFamily,
+    lineHeight,
+    tabSize,
+    themeId,
+    editorItalicComments,
+    editorFontLigatures,
+  } = useMonacoEditorSettings();
 
   useEffect(() => {
     let closed = false;
@@ -55,52 +75,87 @@ export default function MonacoGitDiff({ diff, viewMode = "split", showWhitespace
       const owner = hunkActions.current;
       if (closed || updating.current || !owner) return;
       setActionFailed(false);
-      void owner.apply(hunkID, action).then(result => {
+      void owner.apply(hunkID, action).then((result) => {
         if (!closed && hunkActions.current === owner && result === "failed") setActionFailed(true);
       });
     });
     review.current = instance;
-    const editors = [instance.editor.getOriginalEditor(), instance.editor.getModifiedEditor()] as const;
+    const editors = [
+      instance.editor.getOriginalEditor(),
+      instance.editor.getModifiedEditor(),
+    ] as const;
     const resize = () => {
-      if (!closed) setHeight(Math.max(MIN_REVIEW_HEIGHT, Math.min(MAX_EMBEDDED_REVIEW_HEIGHT, Math.max(...editors.map(view => view.getContentHeight())))));
+      if (!closed)
+        setHeight(
+          Math.max(
+            MIN_REVIEW_HEIGHT,
+            Math.min(
+              MAX_EMBEDDED_REVIEW_HEIGHT,
+              Math.max(...editors.map((view) => view.getContentHeight())),
+            ),
+          ),
+        );
     };
     const listeners = editors.flatMap((view, index) => {
       let pressed: { lineNumber: number; column: number } | null = null;
-      return [view.onDidContentSizeChange(resize), view.onMouseDown(event => {
-        pressed = !updating.current && event.event.leftButton && !event.event.shiftKey
-          && (event.event.ctrlKey || event.event.metaKey)
-          ? event.target.position : null;
-      }), view.onMouseUp(event => {
-        const start = pressed;
-        pressed = null;
-        const position = event.target.position;
-        // Source navigation is explicit: Ctrl/Cmd-click. Ordinary selection and
-        // drag-selection must remain in the review.
-        if (updating.current || !start || !position || !event.event.leftButton
-          || !view.getSelection()?.isEmpty() || start.lineNumber !== position.lineNumber
-          || start.column !== position.column) return;
-        const side = index === 0 ? "left" : "right";
-        const row = projectReviewRows(latest.current.rows, side).rows[position.lineNumber - 1];
-        const line = row?.newLine ?? row?.oldLine;
-        if (!line) return;
-        const state = useFileSystemStore.getState();
-        const path = latest.current.sourcePath;
-        const absolute = /^(?:[A-Za-z]:[\\/]|\/|[a-z]+:\/\/)/i.test(path);
-        const target = absolute || !state.rootFolderPath ? path : joinPath(state.rootFolderPath, path);
-        void state.handleFileSelect(target, false, line, position.column, undefined, false)
-          .catch(error => { if (!closed) setError(String(error)); });
-      })];
+      return [
+        view.onDidContentSizeChange(resize),
+        view.onMouseDown((event) => {
+          pressed =
+            !updating.current &&
+            event.event.leftButton &&
+            !event.event.shiftKey &&
+            (event.event.ctrlKey || event.event.metaKey)
+              ? event.target.position
+              : null;
+        }),
+        view.onMouseUp((event) => {
+          const start = pressed;
+          pressed = null;
+          const position = event.target.position;
+          // Source navigation is explicit: Ctrl/Cmd-click. Ordinary selection and
+          // drag-selection must remain in the review.
+          if (
+            updating.current ||
+            !start ||
+            !position ||
+            !event.event.leftButton ||
+            !view.getSelection()?.isEmpty() ||
+            start.lineNumber !== position.lineNumber ||
+            start.column !== position.column
+          )
+            return;
+          const side = index === 0 ? "left" : "right";
+          const row = projectReviewRows(latest.current.rows, side).rows[position.lineNumber - 1];
+          const line = row?.newLine ?? row?.oldLine;
+          if (!line) return;
+          const state = useFileSystemStore.getState();
+          const path = latest.current.sourcePath;
+          const absolute = /^(?:[A-Za-z]:[\\/]|\/|[a-z]+:\/\/)/i.test(path);
+          const target =
+            absolute || !state.rootFolderPath ? path : joinPath(state.rootFolderPath, path);
+          void state
+            .handleFileSelect(target, false, line, position.column, undefined, false)
+            .catch((error) => {
+              if (!closed) setError(String(error));
+            });
+        }),
+      ];
     });
     listeners.push(instance.editor.onDidUpdateDiff(resize));
     return () => {
-      closed = true; listeners.forEach(listener => listener.dispose());
-      instance.dispose(); review.current = null;
+      closed = true;
+      listeners.forEach((listener) => listener.dispose());
+      instance.dispose();
+      review.current = null;
     };
   }, []);
 
   useEffect(() => {
-    const owner = createMonacoDiffHunkActions(diff, repoPath ? { repoPath, isStaged } : undefined,
-      { stage: stageHunk, unstage: unstageHunk });
+    const owner = createMonacoDiffHunkActions(diff, repoPath ? { repoPath, isStaged } : undefined, {
+      stage: stageHunk,
+      unstage: unstageHunk,
+    });
     hunkActions.current = owner;
     setActionFailed(false);
     return () => {
@@ -114,39 +169,121 @@ export default function MonacoGitDiff({ diff, viewMode = "split", showWhitespace
     setError(undefined);
     updating.current = true;
     const action = hunkActions.current?.action;
-    void review.current!.update({ rows, language: toMonacoLanguageId(detectLanguageFromPath(sourcePath)),
-      sideBySide: viewMode === "split", collapse: false, overview: !embedded,
-      actions: action ? [{ id: action, title: actionTitle }] : [] })
-      .then(() => { if (!cancelled) { latest.current = { rows, sourcePath }; updating.current = false; } })
-      .catch(error => { if (!cancelled) setError(String(error)); });
-    return () => { cancelled = true; };
+    void review
+      .current!.update({
+        rows,
+        language: toMonacoLanguageId(detectLanguageFromPath(sourcePath)),
+        sideBySide: viewMode === "split",
+        collapse: false,
+        overview: !embedded,
+        actions: action ? [{ id: action, title: actionTitle }] : [],
+      })
+      .then(() => {
+        if (!cancelled) {
+          latest.current = { rows, sourcePath };
+          updating.current = false;
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setError(String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [rows, sourcePath, viewMode, embedded, repoPath, isStaged, actionTitle]);
 
   useEffect(() => {
-    review.current?.select({ matches: searchMatches.map(match => ({ rowID: `line-${match.lineIndex}`,
-      startColumn: match.start + 1, endColumn: match.end + 1, current: match === currentSearchMatch })), searchIDs: searchMatches.map(match => `line-${match.lineIndex}`),
+    review.current?.select({
+      matches: searchMatches.map((match) => ({
+        rowID: `line-${match.lineIndex}`,
+        startColumn: match.start + 1,
+        endColumn: match.end + 1,
+        current: match === currentSearchMatch,
+      })),
+      searchIDs: searchMatches.map((match) => `line-${match.lineIndex}`),
       currentID: currentSearchMatch ? `line-${currentSearchMatch.lineIndex}` : null,
-      revealID: currentSearchMatch ? `line-${currentSearchMatch.lineIndex}` : null });
+      revealID: currentSearchMatch ? `line-${currentSearchMatch.lineIndex}` : null,
+    });
   }, [searchMatches, currentSearchMatch]);
 
   useEffect(() => {
-    review.current?.configure({ fontSize, fontFamily, lineHeight, fontLigatures: editorFontLigatures,
-      renderWhitespace: showWhitespace ? "all" : "none", scrollbar: { alwaysConsumeMouseWheel: false } });
+    review.current?.configure({
+      fontSize,
+      fontFamily,
+      lineHeight,
+      fontLigatures: editorFontLigatures,
+      renderWhitespace: showWhitespace ? "all" : "none",
+      scrollbar: { alwaysConsumeMouseWheel: false },
+    });
     review.current?.editor.getModel()?.original.updateOptions({ tabSize });
     review.current?.editor.getModel()?.modified.updateOptions({ tabSize });
   }, [fontSize, fontFamily, lineHeight, tabSize, showWhitespace, editorFontLigatures]);
 
   useEffect(() => {
-    const apply = (next?: string) => monacoEditor.setTheme(next
-      ? defineMonacoTheme(next, editorItalicComments) : defineActiveMonacoTheme(themeId, editorItalicComments));
+    const apply = (next?: string) =>
+      monacoEditor.setTheme(
+        next
+          ? defineMonacoTheme(next, editorItalicComments)
+          : defineActiveMonacoTheme(themeId, editorItalicComments),
+      );
     apply();
-    const unsubscribe = [themeRegistry.onRegistryChange(apply), themeRegistry.onThemeChange(apply), themeRegistry.onReady(apply)];
-    return () => unsubscribe.forEach(stop => stop());
+    const unsubscribe = [
+      themeRegistry.onRegistryChange(apply),
+      themeRegistry.onThemeChange(apply),
+      themeRegistry.onReady(apply),
+    ];
+    return () => unsubscribe.forEach((stop) => stop());
   }, [themeId, editorItalicComments]);
 
-  return <div className="relative min-h-0 w-full overflow-hidden bg-background" style={{ height: embedded ? height : "100%" }}>
-    <div ref={container} className="absolute inset-0" title="Ctrl/Cmd-click to open source" />
-    {actionFailed && <div role="alert" className="absolute bottom-0 inset-x-0 bg-background p-2 text-destructive">{t("git.operationFailed")}</div>}
-    {error && <div role="alert" className="absolute inset-0 bg-background p-4 text-destructive">{error}</div>}
-  </div>;
+  return (
+    <div
+      className="relative flex min-h-0 w-full flex-col overflow-hidden bg-background"
+      style={{ height: embedded ? height + 28 : "100%" }}
+    >
+      <div className="flex h-7 shrink-0 items-center border-b border-border bg-surface px-2">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          title={t("git.diff.previousChange")}
+          aria-label={t("git.diff.previousChange")}
+          onClick={() => review.current?.editor.goToDiff("previous")}
+        >
+          <CaretUpIcon />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          title={t("git.diff.nextChange")}
+          aria-label={t("git.diff.nextChange")}
+          onClick={() => review.current?.editor.goToDiff("next")}
+        >
+          <CaretDownIcon />
+        </Button>
+        {staging && (
+          <div className="ml-3 grid min-w-0 flex-1 grid-cols-2 gap-4 text-center text-muted-foreground ui-text-sm">
+            <span>{staging.isStaged ? "HEAD" : t("git.diff.index")}</span>
+            <span>{staging.isStaged ? t("git.diff.index") : t("git.diff.workingTree")}</span>
+          </div>
+        )}
+      </div>
+      <div
+        ref={container}
+        className="relative min-h-0 flex-1"
+        title="Ctrl/Cmd-click to open source"
+      />
+      {actionFailed && (
+        <div
+          role="alert"
+          className="absolute bottom-0 inset-x-0 bg-background p-2 text-destructive"
+        >
+          {t("git.operationFailed")}
+        </div>
+      )}
+      {error && (
+        <div role="alert" className="absolute inset-0 bg-background p-4 text-destructive">
+          {error}
+        </div>
+      )}
+    </div>
+  );
 }

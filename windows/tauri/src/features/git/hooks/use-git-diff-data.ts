@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBufferStore } from "@/features/editor/stores/buffer.store";
 import { getBufferById } from "@/features/editor/utils/buffer-index";
 import { useFileSystemStore } from "@/features/file-system/stores/file-system.store";
+import { workspaceRuntimeRegistry } from "@/features/workspace/runtime/workspace-runtime-registry";
+import {
+  useActiveWorkspaceId,
+  useWorkspaceStoreScopeId,
+} from "@/features/workspace/stores/create-workspace-scoped-store";
 import { useTranslation } from "@/i18n/locale-provider";
 import { getFileDiff } from "../api/git-diff-api";
 import { isGitChangeRelevant, subscribeToGitChanges } from "../events/git-events";
 import type { MultiFileDiff } from "../types/git-diff.types";
 import type { GitDiff } from "../types/git.types";
 import { getDiffBufferFilePath } from "../utils/diff-buffer-path";
+import { createDiffLoadController, type DiffRefreshScheduler } from "./git-diff-load-controller";
 
 interface UseDiffDataReturn {
   diff: GitDiff | null;
@@ -20,19 +26,28 @@ interface UseDiffDataReturn {
   switchToView: (viewType: "staged" | "unstaged") => void;
 }
 
-export const useDiffData = (): UseDiffDataReturn => {
+export const useDiffData = (scheduler?: DiffRefreshScheduler): UseDiffDataReturn => {
   const { t } = useTranslation();
+  const scopedWorkspaceId = useWorkspaceStoreScopeId();
+  const activeWorkspaceId = useActiveWorkspaceId();
+  const workspaceId = scopedWorkspaceId ?? activeWorkspaceId;
+  const bufferStore = useBufferStore.getStore(workspaceId);
   const activeBuffer = useBufferStore((state) => {
     if (!state.activeBufferId) return null;
     return getBufferById(state.buffers, state.activeBufferId);
   });
-  const { updateBufferContent, closeBuffer } = useBufferStore.use.actions();
   const rootFolderPath = useFileSystemStore.use.rootFolderPath?.();
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isRefreshing = useRef(false);
+  const scopeKey = `${workspaceId}\0${rootFolderPath ?? ""}\0${activeBuffer?.id ?? ""}`;
+  const currentScopeRef = useRef(scopeKey);
+  currentScopeRef.current = scopeKey;
+  useEffect(() => {
+    setIsLoading(false);
+    setError(null);
+  }, [scopeKey]);
 
   const rawDiffData: GitDiff | MultiFileDiff | null =
     (activeBuffer?.type === "diff" && activeBuffer.diffData) ||
@@ -53,99 +68,92 @@ export const useDiffData = (): UseDiffDataReturn => {
   const isWorkingTreeFileDiff = Boolean(stagedMatch);
   const filePath = getDiffBufferFilePath(activeBuffer?.path);
 
-  const switchToView = useCallback(
-    (viewType: "staged" | "unstaged") => {
+  const openView = useCallback(
+    (viewType: "staged" | "unstaged", newDiff: GitDiff) => {
       if (!filePath) return;
-
-      const encodedPath = encodeURIComponent(filePath);
-      const newVirtualPath = `diff://${viewType}/${encodedPath}`;
-      const displayName = `${filePath.split("/").pop()} (${viewType})`;
-
-      getFileDiff(rootFolderPath!, filePath, viewType === "staged").then((newDiff) => {
-        if (newDiff && newDiff.lines.length > 0) {
-          useBufferStore
-            .getState()
-            .actions.openBuffer(
-              newVirtualPath,
-              displayName,
-              "",
-              false,
-              undefined,
-              true,
-              true,
-              newDiff,
-            );
-        }
-      });
+      bufferStore
+        .getState()
+        .actions.openBuffer(
+          `diff://${viewType}/${encodeURIComponent(filePath)}`,
+          `${filePath.split("/").pop()} (${viewType})`,
+          "",
+          false,
+          undefined,
+          true,
+          true,
+          newDiff,
+        );
     },
-    [filePath, rootFolderPath],
+    [bufferStore, filePath],
   );
 
-  const refresh = useCallback(async () => {
-    if (
-      !isWorkingTreeFileDiff ||
-      !rootFolderPath ||
-      !filePath ||
-      !activeBuffer ||
-      isRefreshing.current
-    ) {
-      return;
-    }
-
-    isRefreshing.current = true;
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const currentViewDiff = await getFileDiff(rootFolderPath, filePath, isStaged);
-
-      if (currentViewDiff && currentViewDiff.lines.length > 0) {
-        updateBufferContent(activeBuffer.id, "", false, currentViewDiff);
-      } else {
-        const otherViewDiff = await getFileDiff(rootFolderPath, filePath, !isStaged);
-
-        if (otherViewDiff && otherViewDiff.lines.length > 0) {
-          switchToView(isStaged ? "unstaged" : "staged");
-          setTimeout(() => closeBuffer(activeBuffer.id), 100);
-        } else {
-          closeBuffer(activeBuffer.id);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to refresh diff:", err);
-      setError(err instanceof Error ? err.message : t("git.diff.refreshFailed"));
-    } finally {
-      setIsLoading(false);
-      isRefreshing.current = false;
-    }
-  }, [
-    rootFolderPath,
-    filePath,
-    isStaged,
-    isWorkingTreeFileDiff,
-    activeBuffer,
-    updateBufferContent,
-    closeBuffer,
-    switchToView,
-    t,
-  ]);
-
+  const bufferId = activeBuffer?.id;
+  const controller = useMemo(
+    () =>
+      createDiffLoadController(
+        {
+          isCurrent: () =>
+            currentScopeRef.current === scopeKey &&
+            bufferStore.getState().activeBufferId === bufferId &&
+            useFileSystemStore.getStore(workspaceId).getState().rootFolderPath === rootFolderPath &&
+            (scopedWorkspaceId !== null ||
+              workspaceRuntimeRegistry.getActiveWorkspaceId() === workspaceId) &&
+            Boolean(isWorkingTreeFileDiff && rootFolderPath && filePath && bufferId),
+          isStaged,
+          read: (staged) => getFileDiff(rootFolderPath!, filePath!, staged),
+          update: (nextDiff) =>
+            bufferStore.getState().actions.updateBufferContent(bufferId!, "", false, nextDiff),
+          open: (staged, nextDiff) => openView(staged ? "staged" : "unstaged", nextDiff),
+          close: () => bufferStore.getState().actions.closeBuffer(bufferId!),
+          loading: setIsLoading,
+          error: (failure) =>
+            setError(
+              failure === null
+                ? null
+                : failure instanceof Error
+                  ? failure.message
+                  : t("git.diff.refreshFailed"),
+            ),
+        },
+        scheduler,
+      ),
+    [
+      scopeKey,
+      workspaceId,
+      scopedWorkspaceId,
+      isWorkingTreeFileDiff,
+      rootFolderPath,
+      filePath,
+      bufferId,
+      isStaged,
+      bufferStore,
+      openView,
+      scheduler,
+      t,
+    ],
+  );
   useEffect(() => {
-    const unsubscribe = subscribeToGitChanges((change) => {
-      if (!isWorkingTreeFileDiff || !rootFolderPath || !filePath || !activeBuffer) return;
-      if (!isGitChangeRelevant(change, rootFolderPath, filePath)) return;
+    controller.activate();
+    setIsLoading(false);
+    setError(null);
+    return () => controller.dispose();
+  }, [controller]);
+  const refresh = useCallback(() => controller.refresh(), [controller]);
+  const switchToView = useCallback(
+    (viewType: "staged" | "unstaged") => {
+      void controller.switchView(viewType === "staged");
+    },
+    [controller],
+  );
 
-      if (isRefreshing.current) return;
-
-      setTimeout(() => {
-        if (!isRefreshing.current) {
-          void refresh();
-        }
-      }, 50);
-    });
-
-    return unsubscribe;
-  }, [refresh, rootFolderPath, filePath, activeBuffer, isWorkingTreeFileDiff]);
+  useEffect(
+    () =>
+      subscribeToGitChanges((change) => {
+        if (!isWorkingTreeFileDiff || !rootFolderPath || !filePath) return;
+        if (isGitChangeRelevant(change, rootFolderPath, filePath)) controller.scheduleRefresh();
+      }),
+    [controller, rootFolderPath, filePath, isWorkingTreeFileDiff],
+  );
 
   return {
     diff,

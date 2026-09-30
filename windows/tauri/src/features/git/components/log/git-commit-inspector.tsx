@@ -77,15 +77,21 @@ export function GitCommitInspector({
             ),
       );
     })();
-    void filesPromise.then((loadedFiles) => {
-      if (requestId !== requestIdRef.current) return;
-      if (loadedFiles === null) {
+    void filesPromise
+      .then((loadedFiles) => {
+        if (requestId !== requestIdRef.current) return;
+        if (loadedFiles === null) {
+          setLoadState("failed");
+          return;
+        }
+        setFiles(loadedFiles);
+        setLoadState("ready");
+      })
+      .catch((error: unknown) => {
+        if (requestId !== requestIdRef.current) return;
+        console.error("Failed to load selected commit files:", error);
         setLoadState("failed");
-        return;
-      }
-      setFiles(loadedFiles);
-      setLoadState("ready");
-    });
+      });
 
     return () => {
       requestIdRef.current += 1;

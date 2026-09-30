@@ -3,7 +3,9 @@ export interface RequestGeneration {
   isCurrent: (generation: number) => boolean;
 }
 
-export function createRequestGeneration(): RequestGeneration {
+export function createRequestGeneration(
+  isOwnerCurrent: () => boolean = () => true,
+): RequestGeneration {
   let currentGeneration = 0;
 
   return {
@@ -11,6 +13,6 @@ export function createRequestGeneration(): RequestGeneration {
       currentGeneration += 1;
       return currentGeneration;
     },
-    isCurrent: (generation) => generation === currentGeneration,
+    isCurrent: (generation) => generation === currentGeneration && isOwnerCurrent(),
   };
 }

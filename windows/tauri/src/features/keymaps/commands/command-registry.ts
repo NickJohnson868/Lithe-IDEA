@@ -1,4 +1,5 @@
 import { useBufferStore } from "@/features/editor/stores/buffer.store";
+import { openGitCommitPanel, pushGitChanges, updateGitProject, newGitBranch } from "./git-command-actions";
 import {
   openGlobalSearch,
   toggleDiagnosticsPane,
@@ -1138,6 +1139,10 @@ const windowCommands: Command[] = [
 ];
 
 const allCommands: Command[] = [
+  { id: "git.commit", title: "Commit", category: "Git", execute: openGitCommitPanel },
+  { id: "git.push", title: "Push", category: "Git", execute: pushGitChanges },
+  { id: "git.update", title: "Update Project", category: "Git", execute: updateGitProject },
+  { id: "git.newBranch", title: "New Branch", category: "Git", execute: newGitBranch },
   ...fileCommands,
   ...editCommands,
   ...terminalCommands,

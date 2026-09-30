@@ -25,6 +25,7 @@ describe("request generation", () => {
     const slowRequest = run(slow.promise);
     const fastRequest = run(fast.promise);
 
+    try {
     fast.resolve("fast");
     await fastRequest;
     expect(accepted).toEqual(["fast"]);
@@ -32,5 +33,34 @@ describe("request generation", () => {
     slow.resolve("slow");
     await slowRequest;
     expect(accepted).toEqual(["fast"]);
+    } finally {
+      fast.resolve("fast");
+      slow.resolve("slow");
+      await Promise.all([fastRequest, slowRequest]);
+    }
   });
+});
+
+test("a newer selection invalidates earlier diff requests", () => {
+  const requests = createRequestGeneration();
+  const first = requests.begin();
+  const second = requests.begin();
+  expect(requests.isCurrent(first)).toBe(false);
+  expect(requests.isCurrent(second)).toBe(true);
+});
+
+test("workspace or repository ownership changes reject otherwise current diffs", () => {
+  let workspace = "first";
+  let repository = "repo-a";
+  const requests = createRequestGeneration(() => workspace === "first" && repository === "repo-a");
+  const request = requests.begin();
+  workspace = "second";
+  expect(requests.isCurrent(request)).toBe(false);
+  workspace = "first";
+  repository = "repo-b";
+  expect(requests.isCurrent(request)).toBe(false);
+  // Cleanup invalidates the ticket even if its original workspace reopens.
+  requests.begin();
+  repository = "repo-a";
+  expect(requests.isCurrent(request)).toBe(false);
 });

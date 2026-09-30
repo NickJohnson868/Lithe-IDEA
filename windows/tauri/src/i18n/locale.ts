@@ -5,6 +5,16 @@ export type DisplayLanguage = (typeof DISPLAY_LANGUAGES)[number];
 
 const catalogs = {
   "en-US": {
+    "git.diff.previousChange": "Previous Change",
+    "git.diff.nextChange": "Next Change",
+    "git.diff.index": "Index",
+    "git.diff.workingTree": "Working Tree",
+    "git.branchPopup.recent": "Recent",
+    "git.branchPopup.local": "Local",
+    "git.branchPopup.remote": "Remote",
+    "git.branchPopup.update": "Update Project",
+    "git.branchPopup.checkout": "Checkout Tag or Revision...",
+    "git.branchPopup.search": "Search for branches and actions",
     "textSearch.includeIgnored": "Include ignored files",
     ...aiCommitEnglish,
     "git.console.details": "Command details",
@@ -4492,6 +4502,16 @@ const catalogs = {
     "welcome.backToProjects": "Back to projects",
   },
   "zh-CN": {
+    "git.diff.previousChange": "上一处修改",
+    "git.diff.nextChange": "下一处修改",
+    "git.diff.index": "暂存区",
+    "git.diff.workingTree": "工作区",
+    "git.branchPopup.recent": "最近",
+    "git.branchPopup.local": "本地",
+    "git.branchPopup.remote": "远程",
+    "git.branchPopup.update": "更新项目",
+    "git.branchPopup.checkout": "检出标签或版本...",
+    "git.branchPopup.search": "搜索分支和操作",
     "textSearch.includeIgnored": "包含忽略文件",
     ...aiCommitChinese,
     "git.console.details": "命令详情",
