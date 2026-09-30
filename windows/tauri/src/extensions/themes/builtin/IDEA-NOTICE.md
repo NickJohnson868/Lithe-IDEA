@@ -24,8 +24,17 @@ above; it does not redistribute a JetBrains open-source build.
 The UI keys are independently mapped to Lithe's CSS and Monaco theme vocabulary.
 The commit is a reproducible source reference, not a claim that all UI states
 have passed screenshot comparison against the user's installed IDEA build.
+Both Islands palette resources were also checked against Community master
+`0ce5cd8fcd867efdce458be50621cefbdb4bb37c` on 2026-09-30 and are unchanged.
 No JetBrains proprietary executable or plugin is bundled by this adaptation.
 
 Ubuntu Mono is bundled through the pinned `@fontsource/ubuntu-mono` package,
 under Ubuntu Font Licence 1.0. Its original license accompanies the npm package;
 the font license is distinct from the palette source's Apache license.
+
+The module directory icons `module.svg` and `module_dark.svg` are copied
+without recoloring from the latest Community source inspected on 2026-09-30:
+`0ce5cd8fcd867efdce458be50621cefbdb4bb37c`,
+`platform/icons/src/expui/nodes/`. Their embedded Apache-2.0 copyright
+notices are preserved. Source:
+https://github.com/JetBrains/intellij-community/tree/0ce5cd8fcd867efdce458be50621cefbdb4bb37c/platform/icons/src/expui/nodes

@@ -11,6 +11,7 @@ import {
 
 type DirectorySemanticKind = Extract<
   FileIconSemanticKind,
+  | "folder.module-root"
   | "folder.source-root"
   | "folder.test-root"
   | "folder.resources-root"
@@ -20,7 +21,7 @@ type DirectorySemanticKind = Extract<
 
 interface StandardMavenRoot {
   path: string;
-  kind: Exclude<DirectorySemanticKind, "folder.package">;
+  kind: Exclude<DirectorySemanticKind, "folder.package" | "folder.module-root">;
   containsPackages: boolean;
 }
 
@@ -167,8 +168,12 @@ export function buildMavenDirectorySemantics(
   ]);
 
   const semantics = new Map<string, DirectorySemanticKind>();
+  const moduleRootKeys = new Set(moduleRoots.map(comparablePath));
   for (const entry of entries) {
     if (!entry.isDir) continue;
+    if (moduleRootKeys.has(comparablePath(entry.path))) {
+      semantics.set(entry.path, "folder.module-root");
+    }
 
     for (const standardRoot of standardRoots) {
       if (pathsEqual(entry.path, standardRoot.path)) {

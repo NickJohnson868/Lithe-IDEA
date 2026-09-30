@@ -298,6 +298,7 @@ export function registerMonacoLspProviders() {
     }
   });
   void listen("lsp://features-changed", () => semanticTokensChanged.fire());
+  void listen("lsp://semantic-tokens-refresh", () => semanticTokensChanged.fire());
   languages.registerDocumentSemanticTokensProvider(
     selector,
     createMonacoSemanticTokenProvider({

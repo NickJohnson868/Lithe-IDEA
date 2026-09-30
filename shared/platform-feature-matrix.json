@@ -89,13 +89,14 @@
       "windows": {
         "evidence": [
           "windows/tauri/src/features/file-system",
-          "windows/tauri/src/features/file-explorer/lib/visible-file-tree-rows.test.ts"
+          "windows/tauri/src/features/file-explorer/lib/visible-file-tree-rows.test.ts",
+          "windows/tauri/src/features/file-explorer/lib/maven-file-tree-semantics.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Workspace",
-      "verification": "新建、移动、重命名、删除文件和目录，并确认相对路径与错误提示一致。 快速定位文件后收缩目录，确认过期定位不重新展开；预加载只筛选发生变更的分支。"
+      "verification": "新建、移动、重命名、删除文件和目录，并确认相对路径与错误提示一致。 快速定位文件后收缩目录，确认过期定位不重新展开；预加载只筛选发生变更的分支。 核对 Maven 模块及源目录的原始 IDEA 图标色值，普通目录不得显示模块徽标。"
     },
     {
       "id": "workspace-document-sync",
@@ -187,13 +188,14 @@
           "windows/tauri/src/features/editor",
           "frontend/editor",
           "windows/tauri/src/extensions/themes/idea-token-presentation.test.ts",
-          "windows/tauri/src/extensions/themes/builtin/IDEA-NOTICE.md"
+          "windows/tauri/src/extensions/themes/builtin/IDEA-NOTICE.md",
+          "windows/tauri/src/platform/lsp-core-adapter.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Editor",
-      "verification": "分别打开 Java、Markdown 和普通文本，确认语言识别、语法高亮和模型切换。 Islands 深色下核对词法角色、JDTLS 静态成员、弃用删除线；与固定 DPI 参考截图逐项比较。"
+      "verification": "分别打开 Java、Markdown 和普通文本，确认语言识别、语法高亮和模型切换。 Islands 深色下核对词法角色、JDTLS 静态成员、弃用删除线；与固定 DPI 参考截图逐项比较。 Windows 验证 Core semanticTokens 请求和服务器刷新通知，确认字段、方法及静态成员不退回普通标识符颜色。"
     },
     {
       "id": "editor-multiline-tabs",

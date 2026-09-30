@@ -297,6 +297,9 @@ const executeCore = mock(
                     ? { error: outcome.coreError }
                     : { result: outcome }),
                 },
+                ...(requestPayload?.operation === "semanticTokens"
+                  ? [{ type: "semanticTokensRefresh", providerId: "java", sessionId }]
+                  : []),
               ],
             },
           };
@@ -1407,6 +1410,7 @@ describe("Rust Core LSP adapter failures", () => {
       lsp_get_inlay_hints: "inlayHints",
       lsp_get_code_lens: "codeLens",
       lsp_get_virtual_document: "virtualDocument",
+      lsp_get_semantic_tokens: "semanticTokens",
     });
 
     const explicitlyHandled = new Set([
@@ -1433,6 +1437,30 @@ describe("Rust Core LSP adapter failures", () => {
     );
 
     expect([...clientCommands].filter((command) => !explicitlyHandled.has(command))).toEqual([]);
+  });
+
+  test("routes Java semantic highlighting through Core and preserves the server legend", async () => {
+    scenario = "semantic-request";
+    const expected = {
+      tokenTypes: ["class", "property", "method"],
+      tokenModifiers: ["static", "declaration"],
+      tokens: [
+        { line: 0, startChar: 6, length: 4, tokenType: 0, tokenModifiers: 2 },
+        { line: 1, startChar: 4, length: 5, tokenType: 1, tokenModifiers: 1 },
+        { line: 2, startChar: 7, length: 3, tokenType: 2, tokenModifiers: 0 },
+      ],
+    };
+    semanticRequestResults = [expected];
+    const filePath = "C:/work/Main.java";
+    await invokeLsp("lsp_start_for_file", {
+      workspacePath: "C:/work", filePath, languageId: "java",
+      providerId: "java", serverPath: "C:/Lithe/jdtls.bat",
+    });
+    expect(await invokeLsp<typeof expected>("lsp_get_semantic_tokens", { filePath })).toEqual(expected);
+    expect(requestPayload).toEqual({
+      sessionId: "java-session", operation: "semanticTokens", uri: "file:///C:/work/Main.java",
+    });
+    expect(emit).toHaveBeenCalledWith("lsp://semantic-tokens-refresh", { sessionId: "java-session" });
   });
 
   test("resolves a provider virtual document without fabricating a file URI", async () => {

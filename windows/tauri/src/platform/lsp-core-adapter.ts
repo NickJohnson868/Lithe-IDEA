@@ -483,6 +483,9 @@ async function dispatchSessionEvent(session: Session, event: RuntimeEvent): Prom
       features: [...session.featureState.features].sort(),
     });
   }
+  if (event.type === "semanticTokensRefresh") {
+    await emit("lsp://semantic-tokens-refresh", { sessionId: session.id });
+  }
   if (event.type !== "requestCompleted" || !event.operationId) return;
   const pending = session.pending.get(event.operationId);
   if (!pending) {
@@ -1280,10 +1283,10 @@ export const LSP_OPERATION_BY_COMMAND = {
   lsp_get_inlay_hints: "inlayHints",
   lsp_get_code_lens: "codeLens",
   lsp_get_virtual_document: "virtualDocument",
+  lsp_get_semantic_tokens: "semanticTokens",
 } as const;
 
 export const LSP_EXPLICITLY_UNAVAILABLE_COMMANDS = [
-  "lsp_get_semantic_tokens",
   "lsp_get_document_symbols",
   "lsp_get_workspace_symbols",
   "lsp_get_signature_help",

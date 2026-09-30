@@ -69,7 +69,8 @@
         "idea-resourcesRoot": "./icons/expui/nodes/resourcesRoot_dark.svg",
         "idea-testResourcesRoot": "./icons/expui/nodes/testResourcesRoot_dark.svg",
         "idea-package": "./icons/expui/nodes/package_dark.svg",
-        "idea-folder": "./icons/expui/nodes/folder_dark.svg"
+        "idea-folder": "./icons/expui/nodes/folder_dark.svg",
+        "idea-module": "./icons/expui/nodes/module_dark.svg"
       },
       "lightIconDefinitions": {
         "idea-typeScript": "./icons/expui/fileTypes/typeScript.svg",
@@ -124,7 +125,8 @@
         "idea-resourcesRoot": "./icons/expui/nodes/resourcesRoot.svg",
         "idea-testResourcesRoot": "./icons/expui/nodes/testResourcesRoot.svg",
         "idea-package": "./icons/expui/nodes/package.svg",
-        "idea-folder": "./icons/expui/nodes/folder.svg"
+        "idea-folder": "./icons/expui/nodes/folder.svg",
+        "idea-module": "./icons/expui/nodes/module.svg"
       },
       "fileExtensions": {
         ".ts": "idea-typeScript",
@@ -226,6 +228,7 @@
         "notice": "idea-text"
       },
       "folders": {
+        "\u0000lithe:folder.module-root": "idea-module",
         "\u0000lithe:folder.source-root": "idea-sourceRoot",
         "\u0000lithe:folder.test-root": "idea-testRoot",
         "\u0000lithe:folder.resources-root": "idea-resourcesRoot",
@@ -233,6 +236,7 @@
         "\u0000lithe:folder.package": "idea-package"
       },
       "expandedFolders": {
+        "\u0000lithe:folder.module-root": "idea-module",
         "\u0000lithe:folder.source-root": "idea-sourceRoot",
         "\u0000lithe:folder.test-root": "idea-testRoot",
         "\u0000lithe:folder.resources-root": "idea-resourcesRoot",

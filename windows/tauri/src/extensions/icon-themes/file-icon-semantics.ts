@@ -5,6 +5,7 @@ export type FileIconSemanticKind =
   | "java.annotation"
   | "java.record"
   | "java.exception"
+  | "folder.module-root"
   | "folder.source-root"
   | "folder.test-root"
   | "folder.resources-root"
@@ -20,6 +21,7 @@ const IDEA_SEMANTIC_LOOKUP_NAMES: Record<FileIconSemanticKind, string> = {
   "java.annotation": "\0lithe:java.annotation",
   "java.record": "\0lithe:java.record",
   "java.exception": "\0lithe:java.exception",
+  "folder.module-root": "\0lithe:folder.module-root",
   "folder.source-root": "\0lithe:folder.source-root",
   "folder.test-root": "\0lithe:folder.test-root",
   "folder.resources-root": "\0lithe:folder.resources-root",

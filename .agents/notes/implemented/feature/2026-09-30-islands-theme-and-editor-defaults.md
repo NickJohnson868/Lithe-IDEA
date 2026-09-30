@@ -14,6 +14,8 @@ Windows 内置深色主题按固定的 IntelliJ Community Islands 资源映射�
 
 - 内置主题集中保存界面、编辑器和 Git 状态颜色。缺少颜色时才应用通用补色，不覆盖明确声明的词法角色。
 - 语义着色继续由 JDTLS 提供，公共 Monaco 层保留服务端的 static 等修饰符。深色主题选择静态成员斜体；原有 readonly、deprecated 位序不变，其他平台没有默认开启这项展示。
+- Windows 必须将 `lsp_get_semantic_tokens` 路由到已有 Core `semanticTokens` 操作，并转发服务器刷新通知。此前前端仍将该命令列为不支持，导致 Java 字段和方法一直退回词法颜色；后端支持并不代表产品接入已经完成。
+- 已加载 Maven 描述符的目录使用 Community 原始模块图标；普通目录不猜测为模块。源码、测试、资源、包保持现有独立图标角色，不把模块蓝色覆盖到整个目录树或 Git 状态文字上。
 - Ubuntu Mono 通过固定版本的 Fontsource 包随前端发布，字体许可进入公开资源目录。既有 Bun 下载缓存负责包归档校验，node_modules 和 dist 仍各工作区独立，不新增共享缓存。
 - 只迁移 lithe-dark、Geist Mono、14、关闭连字同时成立的旧默认组合。新默认值和迁移逻辑分别维护，不能覆盖其他主题、字号或字体。
 - 社区来源固定提交 d763f43a424abb418492519b0968a769eff0939d，具体文件与归属写在 IDEA-NOTICE.md；字体使用独立的 Ubuntu Font Licence。该提交不等于用户安装版本的完整界面验收。

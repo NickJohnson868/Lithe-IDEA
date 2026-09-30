@@ -33,8 +33,19 @@ function createMavenTree(root = "D:\\project"): FileEntry[] {
 }
 
 describe("Maven directory icon semantics", () => {
+  test("marks nested Maven modules without coloring ordinary directories as modules", () => {
+    const tree = createMavenTree();
+    tree[0]!.children!.push(
+      directory("service", "D:\\project\\service", [file("pom.xml", "D:\\project\\service\\pom.xml")]),
+      directory("docs", "D:\\project\\docs"),
+    );
+    const semantics = buildMavenDirectorySemantics(tree);
+    expect(semantics.get("D:\\project\\service")).toBe("folder.module-root");
+    expect(semantics.get("D:\\project\\docs")).toBeUndefined();
+  });
   test("recognizes standard roots and Java packages in a loaded Maven module", () => {
     const semantics = buildMavenDirectorySemantics(createMavenTree());
+    expect(semantics.get("D:\\project")).toBe("folder.module-root");
 
     expect(semantics.get("D:\\project\\src\\main\\java")).toBe("folder.source-root");
     expect(semantics.get("D:\\project\\src\\main\\java\\com\\example")).toBe("folder.package");
