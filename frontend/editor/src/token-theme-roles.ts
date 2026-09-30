@@ -5,6 +5,8 @@ import { MONACO_SEMANTIC_TOKEN_TYPES } from "./semantic-tokens";
 export const MONACO_TOKEN_SYNTAX_ROLES: ReadonlyArray<readonly [string, string]> = [
   ["comment", "comment"],
   ["comment.documentation", "comment"],
+  ["comment.documentation.tag", "documentation"],
+  ["comment.documentation.value", "documentation"],
   ["comment.doc", "documentation"],
   ["keyword", "keyword"],
   ["keyword.control", "keyword"],

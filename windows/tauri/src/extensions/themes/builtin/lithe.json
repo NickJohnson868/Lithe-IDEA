@@ -162,6 +162,8 @@
         "function.call": "#BCBEC4",
         "documentation": "#5F826B",
         "comment.documentation": "#5F826B",
+        "comment.documentation.tag": "#67A37C",
+        "comment.documentation.value": "#ABADB3",
         "string.escape": "#CF8E6D",
         "method": "#57AAF7",
         "function.method": "#57AAF7",

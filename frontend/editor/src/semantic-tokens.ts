@@ -58,6 +58,7 @@ const TOKEN_TYPE_INDEX = new Map<string, number>(
 );
 const TOKEN_TYPE_ALIASES: Record<string, (typeof MONACO_SEMANTIC_TOKEN_TYPES)[number]> = {
   annotation: "attribute",
+  annotationmember: "variable",
   bool: "boolean",
   builtinattribute: "attribute",
   builtinconstant: "constant",
@@ -70,6 +71,8 @@ const TOKEN_TYPE_ALIASES: Record<string, (typeof MONACO_SEMANTIC_TOKEN_TYPES)[nu
   derivehelper: "function",
   escapesequence: "string",
   field: "property",
+  record: "class",
+  recordcomponent: "property",
   formatspecifier: "string",
   generic: "typeParameter",
   lifetime: "label",

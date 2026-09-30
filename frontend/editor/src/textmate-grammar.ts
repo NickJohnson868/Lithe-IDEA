@@ -16,8 +16,30 @@ export async function createJavaGrammar(wasm: ArrayBuffer, grammarText: string) 
 // Map TextMate's scope stack to the same token theme used by Monaco's lexical
 // and semantic layers, rather than installing a competing global color map.
 export function tokenRole(scopes: string[]): string {
+  // Nested punctuation and tag scopes must retain their enclosing comment or
+  // string role. Java annotations are storage scopes, not orange keywords.
+  if (scopes.some((scope) => /^comment\.block\.javadoc\b/.test(scope))) {
+    if (scopes.some((scope) => /^keyword\.other\.documentation\b/.test(scope))) {
+      return "comment.documentation.tag";
+    }
+    if (scopes.some((scope) => /^(variable\.parameter|entity\.name\.type)\b/.test(scope))) {
+      return "comment.documentation.value";
+    }
+    return "comment.documentation";
+  }
+  if (scopes.some((scope) => /^comment\b/.test(scope))) return "comment";
+  if (scopes.some((scope) => /^string\b/.test(scope))) {
+    return scopes.some((scope) => /^constant\.character\.escape\b/.test(scope))
+      ? "string.escape" : "string";
+  }
   for (let i = scopes.length - 1; i >= 0; i--) {
     const scope = scopes[i];
+    if (/^(storage\.type\.annotation|punctuation\.definition\.annotation)\.java$/.test(scope)) {
+      return "annotation";
+    }
+    if (/^keyword\.operator\b/.test(scope)) {
+      return /^keyword\.operator\.(new|instanceof)\b/.test(scope) ? "keyword" : "operator";
+    }
     if (/^comment/.test(scope)) return "comment";
     if (/^string/.test(scope)) return "string";
     if (/^constant.numeric/.test(scope)) return "number";

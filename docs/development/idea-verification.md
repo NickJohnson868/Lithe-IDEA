@@ -9,6 +9,7 @@
 | 目录只能展开、读取迟到后重新展开 | 目录控制器合并请求、取消预加载、保护项目与展开代数；空目录缓存、快速收缩及工作区切换测试 |
 | 全文搜索扫描大量忽略目录 | 默认项目忽略范围，保留包含开关；复用可靠内容索引、取消旧查询；规则否定、文件变化与分页测试 |
 | Java 字段和方法仍为普通标识符颜色 | Windows 适配层错误地将已有 Core semanticTokens 列为不支持；接通请求并转发刷新通知，适配器测试验证服务端 legend 与返回值 |
+| 正确配色定义仍显示错误颜色 | Java TextMate 注解被归为关键字、Javadoc 被归为普通注释、运算符被归为关键字；真实语法与 Monaco 匹配器测试验证注解黄色、赋值灰白、字符串绿色及 Javadoc 绿色 |
 | Maven 模块目录使用普通文件夹图标 | 已加载 pom.xml 所在目录映射独立模块角色；保留官方模块 SVG 色值，嵌套模块及普通目录识别测试 |
 | 快速切换仓库、文件或提交时显示旧差异 | 差异读取校验工作区、仓库和请求代数；刷新合并、释放定时器、StrictMode 重连接及迟到结果测试 |
 | 全量前端测试互相污染 | 固定 Bun 下按测试文件隔离进程，共享 suite 截止时间；Maven 启动保存依赖改为按需加载，保留失败阻止启动行为 |
@@ -19,7 +20,7 @@
 
 `./.agents/skills/write-stable-tests/scripts/test-stability-windows.ps1 -Scope Frontend -IsolateFrontendFiles -SuiteTimeoutSeconds 300`
 
-前端 1311 项全部通过，套件耗时约 64.6 秒；新增 Java 语义请求及刷新回归 47ms，嵌套模块角色回归低于报告的毫秒精度。逐测试报告保存在本地 `.artifacts/test-stability/windows-frontend.json`、JUnit 与 `index.html`。Windows Rust 标准范围 215 项通过；Core 搜索／语言／项目重点范围 53 项通过，Git 部分提交／暂存保留／失败恢复等重点范围 16 项通过。完整 Core 运行此前出现本地提交删除测试取消，不能称全部 Core 测试通过。
+前端最新回归 1314 项全部通过，公共编辑器另有 14 项通过；Java 语义请求、真实语法着色和模块角色均有逐测试报告。逐测试报告保存在本地 `.artifacts/test-stability/windows-frontend.json`、JUnit 与 `index.html`。Windows Rust 标准范围 215 项通过；Core 搜索／语言／项目重点范围 53 项通过，Git 部分提交／暂存保留／失败恢复等重点范围 16 项通过。完整 Core 运行此前出现本地提交删除测试取消，不能称全部 Core 测试通过。
 
 资源复用测试、测试 harness 自测、Agent Notes 校验、功能矩阵生成校验、Rust fmt 与 missing_docs Rustdoc 检查通过。Windows Release 通过标准构建入口验证；linker warning 保留在本地构建日志。
 

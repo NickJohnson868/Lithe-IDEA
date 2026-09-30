@@ -178,7 +178,8 @@
       "macos": {
         "evidence": [
           "macos/Sources/Lithe/Views/Editor",
-          "macos/Sources/Lithe/Models/Editor"
+          "macos/Sources/Lithe/Models/Editor",
+          "frontend/editor/src/textmate-grammar.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
@@ -189,13 +190,14 @@
           "frontend/editor",
           "windows/tauri/src/extensions/themes/idea-token-presentation.test.ts",
           "windows/tauri/src/extensions/themes/builtin/IDEA-NOTICE.md",
-          "windows/tauri/src/platform/lsp-core-adapter.test.ts"
+          "windows/tauri/src/platform/lsp-core-adapter.test.ts",
+          "windows/tauri/src/features/editor/engines/monaco/java-color-pipeline.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Editor",
-      "verification": "分别打开 Java、Markdown 和普通文本，确认语言识别、语法高亮和模型切换。 Islands 深色下核对词法角色、JDTLS 静态成员、弃用删除线；与固定 DPI 参考截图逐项比较。 Windows 验证 Core semanticTokens 请求和服务器刷新通知，确认字段、方法及静态成员不退回普通标识符颜色。"
+      "verification": "分别打开 Java、Markdown 和普通文本，确认语言识别、语法高亮和模型切换。 Islands 深色下核对词法角色、JDTLS 静态成员、弃用删除线；与固定 DPI 参考截图逐项比较。 Windows 验证 Core semanticTokens 请求和服务器刷新通知，确认字段、方法及静态成员不退回普通标识符颜色。 真实 Java 语法输出须映射注解、Javadoc 与运算符角色，并核对 Monaco 最终颜色；主题色值正确不能代替渲染验收。"
     },
     {
       "id": "editor-multiline-tabs",
