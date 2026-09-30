@@ -253,6 +253,8 @@ frame 缓冲区、open-document 集合、pending LSP 请求或语言服务器子
 [`rust/lithe-core/src/lsp/languages/catalog.rs`](../../../../rust/lithe-core/src/lsp/languages/catalog.rs)
 头部注释。
 
+Windows 的定义跳转必须保留服务器返回的目标 URI 和范围，不能为了 Ctrl 悬停下划线而替换成当前模型位置；Monaco opener 负责通过已有缓冲区管线打开物理文件与反编译文档。点击跳转在已有会话 ready 时仍需等待当前编辑器文本同步，右边缘点击的位置收敛到单词内部。空悬停结果可能来自未完成导入或暂时失败，点击时必须重新查询；成功结果缓存、悬停节流和请求合并继续保留。虚拟文档继续借用来源会话，不能把反编译文本写回来源文件。快捷键入口同样等待同步，并丢弃切换活动缓冲区后的结果。`definition-link.test.ts` 控制同步、空缓存恢复与响应顺序，`lsp-definition-provider.test.ts` 验证真实 URI 与坐标转换；真实 JDTLS smoke 另验证 Core 物理与虚拟导航，不替代用户项目的点击验收。
+
 ## 适用范围
 
 - `rust/lithe-core/src/lsp/`

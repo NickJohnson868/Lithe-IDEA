@@ -1,6 +1,38 @@
 import { describe, expect, test } from "bun:test";
 import type { FileEntry } from "@/features/file-system/types/app.types";
-import { buildMavenDirectorySemantics } from "./maven-file-tree-semantics";
+import type { MavenProject } from "@/features/maven/types/maven.types";
+import {
+  buildMavenDirectorySemantics,
+  mavenProjectContextForTree,
+} from "./maven-file-tree-semantics";
+
+function project(relativePath = "."): MavenProject {
+  return {
+    relativePath,
+    artifactId: "project",
+    packaging: "pom",
+    sourceRoots: [],
+    profiles: [],
+    hasWrapper: false,
+    modules: [
+      {
+        relativePath: "service",
+        artifactId: "service",
+        packaging: "pom",
+        sourceRoots: [],
+        modules: [
+          {
+            relativePath: "service/api",
+            artifactId: "api",
+            packaging: "jar",
+            sourceRoots: [],
+            modules: [],
+          },
+        ],
+      },
+    ],
+  };
+}
 
 function directory(name: string, path: string, children: FileEntry[] = []): FileEntry {
   return { name, path, isDir: true, children };
@@ -33,10 +65,50 @@ function createMavenTree(root = "D:\\project"): FileEntry[] {
 }
 
 describe("Maven directory icon semantics", () => {
+  test("marks unopened modules from the Maven model without reading their children", () => {
+    const tree = [
+      directory("project", "D:/project", [
+        { name: "service", path: "D:/project/service", isDir: true },
+        directory("docs", "D:/project/docs"),
+      ]),
+    ];
+    const semantics = buildMavenDirectorySemantics(tree, {
+      root: "D:/project",
+      project: project(),
+    });
+    expect(semantics.get("D:/project")).toBe("folder.module-root");
+    expect(semantics.get("D:/project/service")).toBe("folder.module-root");
+    expect(semantics.get("D:/project/docs")).toBeUndefined();
+    expect(tree[0]!.children![0]!.children).toBeUndefined();
+  });
+
+  test("nested module paths are reactor-relative even when the reactor is in a subdirectory", () => {
+    const semantics = buildMavenDirectorySemantics(
+      [directory("api", "D:/workspace/reactor/service/api")],
+      { root: "D:/workspace", project: project("reactor") },
+    );
+    expect(semantics.get("D:/workspace/reactor/service/api")).toBe("folder.module-root");
+  });
+
+  test("does not reuse another workspace's Maven model or retain removed modules", () => {
+    const model = project();
+    expect(mavenProjectContextForTree("D:/other", "D:/project", model)).toBeNull();
+    expect(mavenProjectContextForTree("d:/PROJECT/", "D:\\project", model)?.project).toBe(model);
+    expect(
+      mavenProjectContextForTree("/workspace/Project", "/workspace/project", model),
+    ).toBeNull();
+    const tree = [directory("service", "D:/project/service")];
+    expect(
+      buildMavenDirectorySemantics(tree, { root: "D:/project", project: { ...model, modules: [] } })
+        .size,
+    ).toBe(0);
+  });
   test("marks nested Maven modules without coloring ordinary directories as modules", () => {
     const tree = createMavenTree();
     tree[0]!.children!.push(
-      directory("service", "D:\\project\\service", [file("pom.xml", "D:\\project\\service\\pom.xml")]),
+      directory("service", "D:\\project\\service", [
+        file("pom.xml", "D:\\project\\service\\pom.xml"),
+      ]),
       directory("docs", "D:\\project\\docs"),
     );
     const semantics = buildMavenDirectorySemantics(tree);

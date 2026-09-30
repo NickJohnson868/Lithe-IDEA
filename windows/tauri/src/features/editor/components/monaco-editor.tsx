@@ -1273,9 +1273,15 @@ export function MonacoEditor({
           mouseEvent.stopPropagation();
           mouseSelectingRef.current = false;
           mouseGestureStartRef.current = null;
-          editor.setPosition(event.target.position);
+          const clickedWord = model.getWordAtPosition(event.target.position);
+          const clickedPosition = clickedWord
+            ? event.target.position.with(
+                undefined,
+                Math.min(event.target.position.column, clickedWord.endColumn - 1),
+              )
+            : event.target.position;
+          editor.setPosition(clickedPosition);
           syncCursorAndSelection();
-          const clickedPosition = event.target.position;
           const clickIntent = ++definitionClickIntent;
           if (!definitionLinkGesture.enabled) {
             void keymapRegistry.executeCommand("editor.goToDefinition");

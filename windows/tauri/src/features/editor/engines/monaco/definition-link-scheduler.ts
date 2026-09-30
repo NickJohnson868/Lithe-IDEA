@@ -123,12 +123,18 @@ export class DefinitionHoverScheduler<Request, Result> {
     this.cancelScheduled();
   }
 
-  resolveNow(request: Request): Promise<Result | undefined> {
+  resolveNow(
+    request: Request,
+    reuseCachedResult: (result: Result) => boolean = () => true,
+  ): Promise<Result | undefined> {
     if (this.lifecycle.phase === "disposed") return Promise.resolve(undefined);
 
     const key = this.keyOf(request);
     const cached = this.readCache(key);
-    if (cached !== undefined) return Promise.resolve(cached);
+    if (cached !== undefined) {
+      if (reuseCachedResult(cached)) return Promise.resolve(cached);
+      this.cache.delete(key);
+    }
 
     if (this.scheduled?.key === key) this.cancelScheduled();
     if (this.inFlight?.key === key && this.inFlight.generation === this.generation) {

@@ -1,14 +1,17 @@
 import { mapCompletionKind } from "@lithe/editor/completion-kind";
-import { editor as monacoEditor, Emitter, languages, Range as MonacoRange, Uri } from "monaco-editor";
+import {
+  editor as monacoEditor,
+  Emitter,
+  languages,
+  Range as MonacoRange,
+  Uri,
+} from "monaco-editor";
 import type * as Monaco from "monaco-editor";
 // Ctrl+hover underline for go-to-definition.
 import "monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.js";
 import type { CompletionItem, Hover } from "vscode-languageserver-protocol";
 import { listen } from "@tauri-apps/api/event";
-import {
-  isDocumentFeatureAvailable,
-  LspClient,
-} from "@/features/editor/lsp/lsp-client";
+import { isDocumentFeatureAvailable, LspClient } from "@/features/editor/lsp/lsp-client";
 import { formatHoverContents } from "@/features/editor/lsp/hover-content";
 import { lspDocumentTargetForEditorPath } from "@/features/editor/lsp/lsp-document-target";
 import { useLspStore } from "@/features/editor/lsp/stores/lsp.store";
@@ -65,7 +68,6 @@ function toMonacoTextEdit(edit: LspTextEdit): Monaco.languages.TextEdit {
 function completionLabelText(label: CompletionItem["label"]): string {
   return label;
 }
-
 
 function markupDocumentation(
   value: CompletionItem["documentation"] | CompletionItem["detail"],
@@ -192,43 +194,25 @@ export function registerMonacoLspProviders() {
     },
   });
 
-  // A definition provider makes Monaco underline symbols on Ctrl+hover.
-  // The actual target locations are intentionally returned as the current
-  // cursor range so Monaco never tries to open a model it cannot find.
-  // Navigation is handled entirely by the registerEditorOpener below, which
-  // calls Lithe's own buffer pipeline for both physical files and virtual
-  // (decompiled) documents.
+  // Preserve the server's destinations. The editor opener below loads physical
+  // files and decompiled documents through Lithe's buffer pipeline.
   languages.registerDefinitionProvider(selector, {
     async provideDefinition(model, position) {
       const target = availableTarget(model, "definition");
       if (!target) return [];
 
+      if (!target.documentUri)
+        await lspClient.synchronizeDocument(target.filePath, model.getValue());
+      const word = model.getWordAtPosition(position);
       const locations = await lspClient.getDefinition(
         target,
         position.lineNumber - 1,
-        position.column - 1,
+        Math.min(position.column, word ? word.endColumn - 1 : position.column) - 1,
       );
-      if (!locations || locations.length === 0) return [];
-
-      // Return the word range at the cursor so Monaco draws the underline,
-      // but keep the URI pointing at the current model so no external model
-      // lookup is triggered. The opener intercepts Ctrl+Click and does the
-      // real navigation with the LSP location.
-      const word = model.getWordAtPosition(position);
-      const wordRange = word
-        ? new MonacoRange(
-            position.lineNumber,
-            word.startColumn,
-            position.lineNumber,
-            word.endColumn,
-          )
-        : new MonacoRange(
-            position.lineNumber,
-            position.column,
-            position.lineNumber,
-            position.column,
-          );
-      return [{ uri: model.uri, range: wordRange }];
+      return (locations ?? []).map((location) => ({
+        uri: toMonacoLocationUri(location.uri),
+        range: toMonacoRange(location.range),
+      }));
     },
   });
 
@@ -236,7 +220,8 @@ export function registerMonacoLspProviders() {
   // Lithe's buffer pipeline instead of Monaco's model resolver.
   monacoEditor.registerEditorOpener({
     openCodeEditor(source, resource, selectionOrPosition) {
-      const sourceModel = "getModel" in source ? (source as Monaco.editor.ICodeEditor).getModel() : null;
+      const sourceModel =
+        "getModel" in source ? (source as Monaco.editor.ICodeEditor).getModel() : null;
       if (!sourceModel) return false;
       const sourcePath = filePathFromModel(sourceModel);
       const range = MonacoRange.isIRange(selectionOrPosition)
@@ -258,7 +243,7 @@ export function registerMonacoLspProviders() {
         const bufferStore = useBufferStore.getState();
         await openLspNavigationLocation({
           location: {
-            uri: resource.scheme === "file" ? resource.toString() : resource.toString(),
+            uri: resource.toString(),
             range: {
               start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
               end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },

@@ -2,7 +2,10 @@ import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { IDEA_ICON_THEME_ID } from "@/extensions/icon-themes/file-icon-semantics";
 import { getFileTreeRowHeight } from "@/features/file-explorer/lib/file-tree-row";
-import { buildMavenDirectorySemantics } from "@/features/file-explorer/lib/maven-file-tree-semantics";
+import {
+  buildMavenDirectorySemantics,
+  mavenProjectContextForTree,
+} from "@/features/file-explorer/lib/maven-file-tree-semantics";
 import {
   buildVisibleFileTreeRows,
   type VisibleFileTreeRow,
@@ -10,6 +13,7 @@ import {
 import { useFileTreeStore } from "@/features/file-explorer/stores/file-explorer-tree.store";
 import type { FileEntry } from "@/features/file-system/types/app.types";
 import { useSettingsStore } from "@/features/settings/stores/settings.store";
+import { useMavenStore } from "@/features/maven/stores/maven.store";
 
 interface UseFileExplorerVisibleRowsOptions {
   files: FileEntry[];
@@ -42,12 +46,17 @@ export function useFileExplorerVisibleRows({
     );
   const rowHeight = getFileTreeRowHeight(uiFontSize);
   const semanticPresentationEnabled = showFileIcons && iconTheme === IDEA_ICON_THEME_ID;
+  const mavenProject = useMavenStore((state) => state.project);
+  const mavenRoot = useMavenStore((state) => state.root);
   const directorySemantics = useMemo(
     () =>
       semanticPresentationEnabled
-        ? buildMavenDirectorySemantics(semanticFiles ?? files)
+        ? buildMavenDirectorySemantics(
+            semanticFiles ?? files,
+            mavenProjectContextForTree(rootFolderPath, mavenRoot, mavenProject),
+          )
         : new Map(),
-    [files, semanticFiles, semanticPresentationEnabled],
+    [files, semanticFiles, semanticPresentationEnabled, rootFolderPath, mavenRoot, mavenProject],
   );
 
   const visibleRows = useMemo(() => {

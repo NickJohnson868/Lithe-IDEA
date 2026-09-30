@@ -77,6 +77,7 @@ type LspNavigationClient = {
     feature?: string,
   ) => Promise<LspDocumentAvailability>;
   getVirtualDocument: (filePath: string, virtualUri: string) => Promise<string | null>;
+  synchronizeDocument: (filePath: string, content: string) => Promise<void>;
 };
 
 const NAVIGATION_LANGUAGE_SERVER_TOAST_ID = "navigation-language-server-readiness";
@@ -121,10 +122,7 @@ function isCurrentNavigationTarget(
   );
 }
 
-function navigationBlockMessage(
-  block: LanguageServerNavigationBlock,
-  feature: string,
-): string {
+function navigationBlockMessage(block: LanguageServerNavigationBlock, feature: string): string {
   const t = getCurrentTranslator();
   const name = languageDisplayName(block.languageId);
   switch (block.reason) {
@@ -180,21 +178,16 @@ async function ensureNavigationLanguageServer(
     root: workspacePath,
   };
   toast.info(
-    navigationBlockMessage(
-      { reason: "preparing", languageId: block.languageId },
-      feature,
-    ),
+    navigationBlockMessage({ reason: "preparing", languageId: block.languageId }, feature),
     { id: NAVIGATION_LANGUAGE_SERVER_TOAST_ID, duration: 3500 },
   );
 
   // Attach the current buffer in the background, but this user action ends
   // here. Continuing after readiness would move the editor long after the user
   // has switched context.
-  void lspClient
-    .ensureDocumentReady(target, scope, buffer.content, feature)
-    .catch((error) => {
-      logger.warn("LSPNavigation", "Background document attachment failed", error);
-    });
+  void lspClient.ensureDocumentReady(target, scope, buffer.content, feature).catch((error) => {
+    logger.warn("LSPNavigation", "Background document attachment failed", error);
+  });
   return "deferred";
 }
 
@@ -419,9 +412,14 @@ async function goToActiveLspLocation(
         })
       : undefined;
   const hasPreResolvedLocations = preResolvedLocations !== undefined;
+  if (!hasPreResolvedLocations && !documentTarget.documentUri) {
+    await lspClient.synchronizeDocument(documentTarget.filePath, activeBuffer.content);
+  }
   let locations = hasPreResolvedLocations
     ? preResolvedLocations
     : await resolveLocations(lspClient, documentTarget, requestLine, requestCharacter);
+
+  if (useBufferStore.getState().activeBufferId !== activeBuffer.id) return;
 
   if (
     (!locations || locations.length === 0) &&

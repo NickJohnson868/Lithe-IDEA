@@ -92,7 +92,7 @@ export function registerMonacoDefinitionLinkGesture({
     return {
       modelVersion: model.getVersionId(),
       lineNumber: position.lineNumber,
-      character: position.column - 1,
+      character: Math.min(position.column, word.endColumn - 1) - 1,
       startColumn: word.startColumn,
       endColumn: word.endColumn,
     };
@@ -124,19 +124,15 @@ export function registerMonacoDefinitionLinkGesture({
         });
       }
       const lspClient = LspClient.getInstance();
-      if (
-        workspaceScope &&
-        !isDocumentFeatureAvailable(
-          lspClient.getDocumentAvailability(documentTarget, "definition"),
-        )
-      ) {
+      if (workspaceScope) {
         try {
-          await lspClient.ensureDocumentReady(
+          const availability = await lspClient.ensureDocumentSynchronized(
             documentTarget,
             workspaceScope,
             model.getValue(),
             "definition",
           );
+          if (!isDocumentFeatureAvailable(availability)) return { locations: [] };
         } catch (error) {
           logger.error("DefinitionLink", "Could not prepare definition session:", error);
           return { locations: [] };
@@ -144,11 +140,12 @@ export function registerMonacoDefinitionLinkGesture({
       }
       const locations =
         (await lspClient.getDefinition(documentTarget, line, request.character)) ?? [];
-      if (isVirtualDocument) {
-        frontendTrace("info", "definition-link", "resolve:end", {
-          location_count: locations.length,
-        });
-      }
+      frontendTrace("info", "definition-link", "resolve:end", {
+        line,
+        character: request.character,
+        location_count: locations.length,
+        is_virtual_document: isVirtualDocument,
+      });
       if (
         locations.length > 0 ||
         model.isDisposed() ||
@@ -294,7 +291,9 @@ export function registerMonacoDefinitionLinkGesture({
     async resolveForClick(position) {
       const request = requestAtPosition(position);
       if (!request) return null;
-      const result = await scheduler.resolveNow(request);
+      // An empty hover response may precede project import or server recovery.
+      // Explicit clicks must recheck it without discarding successful matches.
+      const result = await scheduler.resolveNow(request, (cached) => cached.locations.length > 0);
       if (
         !result ||
         model.isDisposed() ||

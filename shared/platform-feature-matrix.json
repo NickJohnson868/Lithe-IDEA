@@ -90,13 +90,14 @@
         "evidence": [
           "windows/tauri/src/features/file-system",
           "windows/tauri/src/features/file-explorer/lib/visible-file-tree-rows.test.ts",
-          "windows/tauri/src/features/file-explorer/lib/maven-file-tree-semantics.test.ts"
+          "windows/tauri/src/features/file-explorer/lib/maven-file-tree-semantics.test.ts",
+          "windows/tauri/src/features/file-explorer/hooks/use-file-explorer-visible-rows.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Workspace",
-      "verification": "新建、移动、重命名、删除文件和目录，并确认相对路径与错误提示一致。 快速定位文件后收缩目录，确认过期定位不重新展开；预加载只筛选发生变更的分支。 核对 Maven 模块及源目录的原始 IDEA 图标色值，普通目录不得显示模块徽标。"
+      "verification": "新建、移动、重命名、删除文件和目录，并确认相对路径与错误提示一致。 快速定位文件后收缩目录，确认过期定位不重新展开；预加载只筛选发生变更的分支。 核对 Maven 模块及源目录的原始 IDEA 图标色值，普通目录不得显示模块徽标。 Maven 模型完成后，未展开模块立即显示徽标；切换项目和移除模块不保留旧标记。"
     },
     {
       "id": "workspace-document-sync",
@@ -879,13 +880,15 @@
       "windows": {
         "evidence": [
           "windows/tauri/src/features",
-          "shared/fixtures/lsp"
+          "shared/fixtures/lsp",
+          "windows/tauri/src/features/editor/engines/monaco/definition-link.test.ts",
+          "windows/tauri/src/features/editor/engines/monaco/lsp-definition-provider.test.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Language Tooling",
-      "verification": "验证定义、引用、语义标记和 UTF-16 文本编辑的坐标转换。"
+      "verification": "验证定义、引用、语义标记和 UTF-16 文本编辑的坐标转换。 Windows 点击与快捷键在文本同步后发请求；方法名右边缘、跨文件及 jdt 反编译目标保持实际 URI 和范围，切换活动文件丢弃迟到结果；在用户项目实际点击验收。 Java 服务恢复后，在未编辑文件的情况下再次点击此前无结果的方法，应重新查询并允许跳转；成功结果继续使用缓存。"
     },
     {
       "id": "run-discovery",

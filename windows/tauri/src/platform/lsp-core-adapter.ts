@@ -1083,7 +1083,7 @@ async function requestOperation(
   const started = await core<{ operationId: string }>(command, payload);
   const operation = new LspOperationLog("semanticRequest", started.operationId, {
     sessionId: session.id,
-    method: command,
+    method: typeof payload.operation === "string" ? payload.operation : command,
     documentUri: payload.uri,
   });
   return new Promise((resolve, reject) => {

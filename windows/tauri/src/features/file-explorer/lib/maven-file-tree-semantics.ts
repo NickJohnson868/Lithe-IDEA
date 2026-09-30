@@ -1,5 +1,6 @@
 import type { FileIconSemanticKind } from "@/extensions/icon-themes/file-icon-semantics";
 import type { FileEntry } from "@/features/file-system/types/app.types";
+import type { MavenProject } from "@/features/maven/types/maven.types";
 import {
   getDirName,
   getRelativePath,
@@ -99,11 +100,27 @@ const JAVA_RESERVED_PACKAGE_SEGMENTS = new Set([
 
 function comparablePath(path: string): string {
   const normalized = normalizePath(stripTrailingPathSeparators(path));
-  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized;
+  return /^(?:[A-Za-z]:\/|\/\/)/.test(normalized) ? normalized.toLowerCase() : normalized;
 }
 
 function pathsEqual(left: string, right: string): boolean {
   return comparablePath(left) === comparablePath(right);
+}
+
+export function mavenProjectContextForTree(
+  treeRoot: string | undefined,
+  projectRoot: string | null,
+  project: MavenProject | null,
+): { root: string; project: MavenProject } | null {
+  return treeRoot && projectRoot && project && pathsEqual(treeRoot, projectRoot)
+    ? { root: projectRoot, project }
+    : null;
+}
+
+function relativeSegments(path: string): string[] {
+  return normalizePath(path)
+    .split("/")
+    .filter((segment) => segment && segment !== ".");
 }
 
 function isJavaPackagePath(relativePath: string): boolean {
@@ -127,13 +144,28 @@ function collectEntries(entries: readonly FileEntry[], output: FileEntry[]) {
 
 export function buildMavenDirectorySemantics(
   files: readonly FileEntry[],
+  projectContext?: { root: string; project: MavenProject } | null,
 ): ReadonlyMap<string, DirectorySemanticKind> {
   const entries: FileEntry[] = [];
   collectEntries(files, entries);
 
+  const knownModuleRoots: string[] = [];
+  if (projectContext) {
+    const reactorRoot = joinPath(
+      projectContext.root,
+      ...relativeSegments(projectContext.project.relativePath),
+    );
+    const appendModule = (module: Pick<MavenProject, "relativePath" | "modules">) => {
+      knownModuleRoots.push(joinPath(reactorRoot, ...relativeSegments(module.relativePath)));
+      for (const child of module.modules) appendModule(child);
+    };
+    knownModuleRoots.push(reactorRoot);
+    for (const module of projectContext.project.modules) appendModule(module);
+  }
   const moduleRoots = Array.from(
-    new Set(
-      entries
+    new Set([
+      ...knownModuleRoots,
+      ...entries
         .filter(
           (entry) =>
             !entry.isDir &&
@@ -141,7 +173,7 @@ export function buildMavenDirectorySemantics(
             !entry.path.startsWith("remote://"),
         )
         .map((entry) => getDirName(entry.path)),
-    ),
+    ]),
   ).sort((left, right) => comparablePath(right).length - comparablePath(left).length);
 
   const standardRoots: StandardMavenRoot[] = moduleRoots.flatMap((moduleRoot) => [

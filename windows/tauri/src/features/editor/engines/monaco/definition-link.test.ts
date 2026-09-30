@@ -22,7 +22,9 @@ mock.module("monaco-editor", () => ({
 // the async-interleaving regression test control when the LSP response lands.
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((next) => { resolve = next; });
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
   return { promise, resolve };
 }
 
@@ -30,16 +32,21 @@ function deferred<T>() {
 // `lspClient.getDefinition`. Stub it to return a controllable promise so the
 // async-interleaving regression test can hold the response and observe the
 // surface-deactivation check.
-let getDefinitionDeferred: { promise: Promise<unknown>; resolve: (value: unknown) => void } | null = null;
+let getDefinitionDeferred: { promise: Promise<unknown>; resolve: (value: unknown) => void } | null =
+  null;
+let synchronization: Promise<unknown> = Promise.resolve({ phase: "ready" });
+const synchronize = mock(() => synchronization);
+const getDefinition = mock(() => {
+  getDefinitionDeferred = deferred<unknown>();
+  return getDefinitionDeferred.promise;
+});
 mock.module("@/features/editor/lsp/lsp-client", () => ({
   isDocumentFeatureAvailable: () => true,
   LspClient: {
     getInstance: () => ({
       getDocumentAvailability: () => ({ definition: "ready" }),
-      getDefinition: () => {
-        getDefinitionDeferred = deferred<unknown>();
-        return getDefinitionDeferred.promise;
-      },
+      ensureDocumentSynchronized: synchronize,
+      getDefinition,
     }),
   },
 }));
@@ -101,6 +108,88 @@ function createStubModel() {
 const javaTarget = { filePath: "/project/src/Main.java" };
 
 describe("definition link gesture", () => {
+  test("rechecks an empty cached definition after the server has recovered without editing the file", async () => {
+    getDefinition.mockClear();
+    const gesture = registerMonacoDefinitionLinkGesture({
+      editor: createStubEditor().editor,
+      model: {
+        getLanguageId: () => "java",
+        isDisposed: () => false,
+        getVersionId: () => 1,
+        getWordAtPosition: () => ({ startColumn: 1, endColumn: 7 }),
+      } as unknown as Monaco.editor.ITextModel,
+      documentTarget: javaTarget,
+    });
+    let click: Promise<unknown> | undefined;
+    try {
+      click = gesture.resolveForClick({ lineNumber: 1, column: 3 } as Monaco.Position);
+      getDefinitionDeferred!.resolve([]);
+      expect(await click).toMatchObject({ locations: [] });
+      click = gesture.resolveForClick({ lineNumber: 1, column: 3 } as Monaco.Position);
+      expect(getDefinition).toHaveBeenCalledTimes(2);
+      getDefinitionDeferred!.resolve([
+        {
+          uri: "file:///project/Target.java",
+          range: { start: { line: 1, character: 0 }, end: { line: 1, character: 7 } },
+        },
+      ]);
+      expect(await click).toMatchObject({ locations: [{ uri: "file:///project/Target.java" }] });
+      expect(
+        await gesture.resolveForClick({ lineNumber: 1, column: 3 } as Monaco.Position),
+      ).toMatchObject({ locations: [{ uri: "file:///project/Target.java" }] });
+      expect(getDefinition).toHaveBeenCalledTimes(2);
+    } finally {
+      getDefinitionDeferred?.resolve([]);
+      await click;
+      gesture.dispose();
+    }
+  });
+  test("waits for current editor text before resolving a click on the method's right edge", async () => {
+    const gate = deferred<unknown>();
+    synchronization = gate.promise;
+    synchronize.mockClear();
+    getDefinition.mockClear();
+    const gesture = registerMonacoDefinitionLinkGesture({
+      editor: createStubEditor().editor,
+      model: {
+        getLanguageId: () => "java",
+        isDisposed: () => false,
+        getVersionId: () => 2,
+        getWordAtPosition: () => ({ startColumn: 2, endColumn: 8 }),
+        getValue: () => " changed()",
+      } as unknown as Monaco.editor.ITextModel,
+      documentTarget: javaTarget,
+      workspaceScope: { workspaceId: "fixture", root: "/project" },
+    });
+    let click: Promise<unknown> | undefined;
+    try {
+      click = gesture.resolveForClick({ lineNumber: 1, column: 8 } as Monaco.Position);
+      expect(synchronize).toHaveBeenCalledWith(
+        javaTarget,
+        { workspaceId: "fixture", root: "/project" },
+        " changed()",
+        "definition",
+      );
+      expect(getDefinition).not.toHaveBeenCalled();
+      gate.resolve({ phase: "ready" });
+      await Promise.resolve();
+      expect(getDefinition).toHaveBeenCalledWith(javaTarget, 0, 6);
+      getDefinitionDeferred!.resolve([
+        {
+          uri: "file:///project/Target.java",
+          range: { start: { line: 3, character: 1 }, end: { line: 3, character: 8 } },
+        },
+      ]);
+      expect(await click).toMatchObject({ locations: [{ uri: "file:///project/Target.java" }] });
+    } finally {
+      gate.resolve({ phase: "ready" });
+      await Promise.resolve();
+      getDefinitionDeferred?.resolve([]);
+      await click;
+      synchronization = Promise.resolve({ phase: "ready" });
+      gesture.dispose();
+    }
+  });
   test("registers listeners for a supported document even when inactive", () => {
     const { editor } = createStubEditor();
     const gesture = registerMonacoDefinitionLinkGesture({
@@ -186,7 +275,12 @@ describe("definition link gesture", () => {
     active = false;
 
     // Let the LSP response land.
-    (getDefinitionDeferred as unknown as { resolve: (value: unknown) => void }).resolve([{ uri: "file:///target", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } } }]);
+    (getDefinitionDeferred as unknown as { resolve: (value: unknown) => void }).resolve([
+      {
+        uri: "file:///target",
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+      },
+    ]);
 
     const hint = await clickPromise;
     // The request should be rejected because the surface is no longer active.
