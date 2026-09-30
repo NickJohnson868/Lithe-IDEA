@@ -24,6 +24,7 @@ interface FontActions {
 const FONT_CACHE_KEY = "lithe_font_cache_v2";
 const FONT_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 const FALLBACK_FONTS: FontInfo[] = [
+  { name: "Ubuntu Mono", family: "Ubuntu Mono", style: "Regular", is_monospace: true },
   {
     name: "Geist Sans",
     family: "Geist Sans",
@@ -222,6 +223,7 @@ export const useFontStore = createSelectors(
           },
 
           validateFont: async (fontFamily: string): Promise<boolean> => {
+            if (FALLBACK_FONTS.some((font) => font.family === fontFamily)) return true;
             try {
               return await invoke<boolean>("validate_font", { fontFamily });
             } catch (error) {

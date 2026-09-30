@@ -3,6 +3,7 @@ import isEqual from "fast-deep-equal";
 import { defaultSettings } from "@/features/settings/config/default-settings";
 import { applySettingsSideEffects } from "@/features/settings/lib/settings-effects";
 import { normalizeSettings } from "@/features/settings/lib/settings-normalization";
+import { migrateIdeaEditorDefaults } from "./idea-appearance-migration";
 import { getSystemThemePreference } from "@/features/settings/lib/theme-resolution";
 import {
   loadSettingsFromStore,
@@ -39,7 +40,7 @@ async function resolveInitialSettings(): Promise<{
     detectedTheme = true;
   }
 
-  const settings = normalizeSettings(loadedSettings);
+  const settings = normalizeSettings(migrateIdeaEditorDefaults(loadedSettings));
   return {
     settings,
     shouldPersist: detectedTheme || !isEqual(settings, loadedSettings),

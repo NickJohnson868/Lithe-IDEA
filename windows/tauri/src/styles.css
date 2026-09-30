@@ -6,12 +6,17 @@
 @import "@fontsource/geist-mono/500.css";
 @import "@fontsource/geist-mono/600.css";
 @import "@fontsource/geist-mono/700.css";
+@import "@fontsource/ubuntu-mono/400.css";
+@import "@fontsource/ubuntu-mono/400-italic.css";
+@import "@fontsource/ubuntu-mono/700.css";
+@import "@fontsource/ubuntu-mono/700-italic.css";
 
 @import "tailwindcss";
 @source "../../../Plugins/win/Official/V0Support";
 
 @import "./styles/theme.css";
 @import "./styles/base.css";
+@import "./styles/idea-workbench.css";
 @import "./styles/scrollbars.css";
 @import "./styles/syntax-tokens.css";
 @import "./styles/rendered-code-tokens.css";

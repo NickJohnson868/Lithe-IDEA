@@ -1,5 +1,5 @@
 export const DEFAULT_UI_FONT_FAMILY = "Microsoft YaHei UI";
-export const DEFAULT_MONO_FONT_FAMILY = "Geist Mono";
+export const DEFAULT_MONO_FONT_FAMILY = "Ubuntu Mono";
 
 const DEFAULT_MONO_FONT_FALLBACK =
   'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
@@ -10,7 +10,7 @@ const DEFAULT_SANS_FONT_FALLBACK =
 const WINDOWS_SANS_FONT_FALLBACK =
   '"Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif';
 
-export const DEFAULT_CODE_FONT_SIZE = 14;
+export const DEFAULT_CODE_FONT_SIZE = 17;
 export const DEFAULT_UI_FONT_SIZE = 13;
 
 export function getTypographyFontFallbacks(isWindows: boolean) {

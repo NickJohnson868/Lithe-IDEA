@@ -5,6 +5,7 @@ import { MONACO_SEMANTIC_TOKEN_TYPES } from "./semantic-tokens";
 export const MONACO_TOKEN_SYNTAX_ROLES: ReadonlyArray<readonly [string, string]> = [
   ["comment", "comment"],
   ["comment.documentation", "comment"],
+  ["comment.doc", "documentation"],
   ["keyword", "keyword"],
   ["keyword.control", "keyword"],
   ["keyword.directive", "keyword"],
@@ -85,18 +86,31 @@ export const MONACO_TOKEN_SYNTAX_ROLES: ReadonlyArray<readonly [string, string]>
   ["keyword.json", "boolean"],
 ];
 
-
 /** Styles whose meaning is independent of the host's palette. */
-export function createMonacoTokenStyleRules(italicComments: boolean): Monaco.editor.ITokenThemeRule[] {
+export function createMonacoTokenStyleRules(
+  italicComments: boolean,
+  italicStatics = false,
+): Monaco.editor.ITokenThemeRule[] {
   return [
     { token: "emphasis", fontStyle: "italic" },
     { token: "strong", fontStyle: "bold" },
     ...MONACO_SEMANTIC_TOKEN_TYPES.flatMap((token) => {
-      const fontStyle = token === "comment" && italicComments ? "italic strikethrough" : "strikethrough";
+      const fontStyle =
+        token === "comment" && italicComments ? "italic strikethrough" : "strikethrough";
       return [
         { token: `${token}.deprecated`, fontStyle },
         { token: `${token}.readonly.deprecated`, fontStyle },
       ];
     }),
+    ...(italicStatics
+      ? ["property", "variable", "method", "function", "constant", "enumMember"].flatMap(
+          (token) => [
+            { token: `${token}.static`, fontStyle: "italic" },
+            { token: `${token}.readonly.static`, fontStyle: "italic" },
+            { token: `${token}.deprecated.static`, fontStyle: "italic strikethrough" },
+            { token: `${token}.readonly.deprecated.static`, fontStyle: "italic strikethrough" },
+          ],
+        )
+      : []),
   ];
 }

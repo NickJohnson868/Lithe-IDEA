@@ -14,7 +14,8 @@
     {
       "id": "bun",
       "path": ".artifacts/bun-cache",
-      "validator": "bun"
+      "validator": "bun",
+      "includes": "Locked npm packages, including Ubuntu Mono font archives; installed node_modules and generated Vite assets remain worktree-local."
     },
     {
       "id": "jdtls",

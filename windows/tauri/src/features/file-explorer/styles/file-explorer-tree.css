@@ -3,9 +3,9 @@
   --file-tree-guide-icon-offset: 8px;
   --file-tree-hover-bg: var(--accent);
   --file-tree-icon-size: 16px;
-  --file-tree-row-inline-inset: 6px;
+  --file-tree-row-inline-inset: 12px;
   --file-tree-row-radius: 4px;
-  --file-tree-selected-idle-bg: var(--border);
+  --file-tree-selected-idle-bg: var(--selected-inactive, var(--border));
   --tree-guide-color: color-mix(in srgb, var(--subtle-foreground) 20%, transparent);
   position: relative;
   overflow-x: hidden;

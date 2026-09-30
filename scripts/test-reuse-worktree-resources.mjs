@@ -149,6 +149,10 @@ try {
   assertSucceeded(result);
   assert.match(result.stdout, /^cargo\t\.artifacts\/cargo-home\/registry\/cache$/m);
   assert.match(result.stdout, /^jdk\t\.artifacts\/jdk-downloads$/m);
+  assert.match(result.stdout, /^bun\t\.artifacts\/bun-cache$/m);
+  // Bundled font packages must reuse verified archives, never mutable installs
+  // or generated frontend output from another checkout.
+  assert.doesNotMatch(result.stdout, /node_modules|\/dist/);
 
   process.stdout.write("Worktree resource reuse tests passed.\n");
 } finally {

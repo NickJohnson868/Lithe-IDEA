@@ -185,13 +185,15 @@
       "windows": {
         "evidence": [
           "windows/tauri/src/features/editor",
-          "frontend/editor"
+          "frontend/editor",
+          "windows/tauri/src/extensions/themes/idea-token-presentation.test.ts",
+          "windows/tauri/src/extensions/themes/builtin/IDEA-NOTICE.md"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Editor",
-      "verification": "分别打开 Java、Markdown 和普通文本，确认语言识别、语法高亮和模型切换。"
+      "verification": "分别打开 Java、Markdown 和普通文本，确认语言识别、语法高亮和模型切换。 Islands 深色下核对词法角色、JDTLS 静态成员、弃用删除线；与固定 DPI 参考截图逐项比较。"
     },
     {
       "id": "editor-multiline-tabs",
@@ -1403,13 +1405,15 @@
       },
       "windows": {
         "evidence": [
-          "windows/tauri/src/features/settings"
+          "windows/tauri/src/features/settings",
+          "windows/tauri/src/features/settings/lib/idea-appearance-migration.test.ts",
+          "windows/tauri/public/licenses/ubuntu-mono.txt"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Settings",
-      "verification": "修改应用级和项目级设置，验证持久化、迁移、重启恢复和无效值提示。"
+      "verification": "修改应用级和项目级设置，验证持久化、迁移、重启恢复和无效值提示。 旧默认组合迁移为 Ubuntu Mono 17 和连字；自定义主题、字体、字号保留，干净机器验证捆绑字体。"
     },
     {
       "id": "keymap-customization",

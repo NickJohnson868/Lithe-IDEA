@@ -128,7 +128,10 @@ SHA-256；Cargo、SwiftPM 和 Bun 使用各自的 lockfile、版本与完整性�
 - `.artifacts/swiftpm-cache/`：SwiftPM 依赖仓库；按 `Package.resolved`、
   `.swift-version` 和 `.lithe-integrity.json` 校验。
 - `.artifacts/bun-cache/`：Bun 下载缓存；按 `bun.lock`、Bun 版本和缓存完整性
-  清单校验。
+  清单校验。Ubuntu Mono 字体包也走同一校验入口；改变字体包版本会改变锁文件
+  身份。只复制验证后的包归档，`node_modules` 和 Vite 生成的字体资产仍在目标
+  工作目录重新安装／生成。随源码提交的 `public/licenses/ubuntu-mono.txt` 通过 Git
+  维护，不注册为缓存资源。
 - `.artifacts/jdtls-downloads/`：JDTLS、Lombok、Java Debug/Test 和 license。
 - `.artifacts/jdk-downloads/`：各平台与架构的 bundled JDK 下载归档。
 

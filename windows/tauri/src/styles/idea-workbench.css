@@ -1,0 +1,62 @@
+/* Geometry follows the pinned Islands reference documented in IDEA-NOTICE.md. */
+html[data-theme="lithe-dark"] {
+  --radius: 6px;
+  --app-press-scale: 1;
+}
+
+html[data-theme="lithe-dark"] [data-slot="button"][data-variant="default"] {
+  border: 1px solid var(--disabled-foreground);
+  background: var(--surface);
+  border-radius: 4px;
+}
+
+html[data-theme="lithe-dark"] [data-slot="button"][data-variant="accent"] {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  border-radius: 4px;
+}
+
+html[data-theme="lithe-dark"] [data-slot="button"][data-variant="default"]:hover {
+  background: var(--accent);
+}
+
+html[data-theme="lithe-dark"] :is([role="menu"], [data-slot="dropdown-menu-content"]) {
+  background: var(--popover);
+  border-color: var(--border);
+  border-radius: 8px;
+}
+
+html[data-theme="lithe-dark"] [role="menuitem"] {
+  min-height: 24px;
+  border-radius: 4px;
+}
+
+html[data-theme="lithe-dark"] :is(input, textarea):focus-visible {
+  outline-color: var(--primary);
+}
+
+html[data-theme="lithe-dark"] :is(input, textarea, select, button):disabled {
+  color: var(--disabled-foreground);
+}
+
+html[data-theme="lithe-dark"] input[type="checkbox"],
+html[data-theme="lithe-dark"] input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+html[data-theme="lithe-dark"] .git-branch-popup [data-command-header] {
+  border-bottom: 0;
+}
+
+html[data-theme="lithe-dark"] .git-branch-popup [data-command-input] {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--disabled-foreground);
+  border-radius: 4px;
+}
+
+html[data-theme="lithe-dark"] .git-branch-popup {
+  max-height: min(720px, calc(100vh - 70px));
+  border-radius: 8px;
+}

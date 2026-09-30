@@ -16,6 +16,7 @@ import { cn } from "@/utils/cn";
 
 // Bundled fonts that are always available
 const BUNDLED_FONTS: FontInfo[] = [
+  { name: "Ubuntu Mono", family: "Ubuntu Mono", style: "Regular", is_monospace: true },
   {
     name: "Geist Sans",
     family: "Geist Sans",

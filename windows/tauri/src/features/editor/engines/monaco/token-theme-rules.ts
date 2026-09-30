@@ -1,10 +1,12 @@
-import { MONACO_TOKEN_SYNTAX_ROLES, createMonacoTokenStyleRules } from "@lithe/editor/token-theme-roles";
+import {
+  MONACO_TOKEN_SYNTAX_ROLES,
+  createMonacoTokenStyleRules,
+} from "@lithe/editor/token-theme-roles";
 import type * as Monaco from "monaco-editor";
 import type { ThemeDefinition } from "@/extensions/themes/theme.types";
 import { toMonacoTokenForeground } from "./color";
 
 export const MONACO_TOKEN_THEME_INHERITS_BASE = false;
-
 
 const INVALID_TOKEN_NAMES = ["invalid", "string.invalid", "number.invalid"];
 
@@ -30,7 +32,9 @@ export function createMonacoTokenThemeRules(
   italicComments: boolean,
 ): Monaco.editor.ITokenThemeRule[] {
   const syntaxRules = MONACO_TOKEN_SYNTAX_ROLES.flatMap(([token, syntaxName]) => {
-    const foreground = toMonacoTokenForeground(syntaxTokenColor(theme, syntaxName));
+    const foreground = toMonacoTokenForeground(
+      syntaxTokenColor(theme, token) ?? syntaxTokenColor(theme, syntaxName),
+    );
     const italicComment = italicComments && syntaxName === "comment";
     if (!foreground && !italicComment) return [];
 
@@ -51,6 +55,9 @@ export function createMonacoTokenThemeRules(
   return [
     ...syntaxRules,
     ...invalidRules,
-    ...createMonacoTokenStyleRules(italicComments),
+    ...createMonacoTokenStyleRules(
+      italicComments,
+      theme.cssVariables["--semantic-static-style"] === "italic",
+    ),
   ];
 }

@@ -158,6 +158,8 @@ async function validatorArguments(resource, cachePath, targetRoot) {
     ];
   }
   if (resource.validator === "bun") {
+    // Font archives use the same lockfile identity and integrity validation as
+    // other npm packages. Never copy installed modules or generated Vite assets.
     const packagePath = await requiredFile(targetRoot, "package.json", resource.id);
     const packageManifest = JSON.parse(await fs.readFile(packagePath, "utf8"));
     const match = String(packageManifest.packageManager ?? "").match(/^bun@(.+)$/);

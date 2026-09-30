@@ -32,7 +32,16 @@ export const MONACO_SEMANTIC_TOKEN_TYPES = [
   "attribute",
 ] as const;
 
-export const MONACO_SEMANTIC_TOKEN_MODIFIERS = ["readonly", "deprecated"] as const;
+// Append modifiers to preserve the existing readonly/deprecated bit positions.
+export const MONACO_SEMANTIC_TOKEN_MODIFIERS = [
+  "readonly",
+  "deprecated",
+  "static",
+  "declaration",
+  "defaultLibrary",
+  "abstract",
+  "async",
+] as const;
 
 export const MONACO_SEMANTIC_TOKEN_LEGEND: Monaco.languages.SemanticTokensLegend = {
   tokenTypes: [...MONACO_SEMANTIC_TOKEN_TYPES],

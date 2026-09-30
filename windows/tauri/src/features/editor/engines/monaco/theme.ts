@@ -73,17 +73,54 @@ function createMonacoThemeData(
     rules,
     colors: {
       "editor.background": background,
-      "editor.foreground": foreground,
+      "editor.foreground": toMonacoColor(
+        theme.cssVariables["--editor-foreground"] ?? foreground,
+        foreground,
+      ),
       "editorLink.activeForeground": accent,
       "editorCursor.foreground": cursor,
       "editor.selectionBackground": selection,
       "editor.inactiveSelectionBackground": border,
-      "editor.lineHighlightBackground": secondaryBackground,
-      "editorLineNumber.foreground": subtleForeground,
-      "editorLineNumber.activeForeground": foreground,
-      "editorIndentGuide.background1": border,
-      "editorIndentGuide.activeBackground1": accent,
-      "editorWhitespace.foreground": subtleForeground,
+      "editor.lineHighlightBackground": toMonacoColor(
+        theme.cssVariables["--editor-line-highlight"] ?? secondaryBackground,
+        secondaryBackground,
+      ),
+      "editorLineNumber.foreground": toMonacoColor(
+        theme.cssVariables["--editor-line-number"] ?? subtleForeground,
+        subtleForeground,
+      ),
+      "editorLineNumber.activeForeground": toMonacoColor(
+        theme.cssVariables["--editor-active-line-number"] ?? foreground,
+        foreground,
+      ),
+      "editorIndentGuide.background1": toMonacoColor(
+        theme.cssVariables["--editor-indent-guide"] ?? border,
+        border,
+      ),
+      "editorIndentGuide.activeBackground1": toMonacoColor(
+        theme.cssVariables["--editor-active-indent-guide"] ?? accent,
+        accent,
+      ),
+      "editorWhitespace.foreground": toMonacoColor(
+        theme.cssVariables["--editor-whitespace"] ?? subtleForeground,
+        subtleForeground,
+      ),
+      "diffEditor.insertedLineBackground": toMonacoColor(
+        theme.cssVariables["--diff-added-background"] ?? "#00000000",
+        "#00000000",
+      ),
+      "diffEditor.removedLineBackground": toMonacoColor(
+        theme.cssVariables["--diff-removed-background"] ?? "#00000000",
+        "#00000000",
+      ),
+      "diffEditor.insertedTextBackground": toMonacoColor(
+        theme.cssVariables["--diff-added-text-background"] ?? selection,
+        selection,
+      ),
+      "diffEditor.removedTextBackground": toMonacoColor(
+        theme.cssVariables["--diff-removed-text-background"] ?? selection,
+        selection,
+      ),
       "editor.findMatchBackground": selection,
       "editor.findMatchHighlightBackground": selected,
       "editorWidget.background": secondaryBackground,
