@@ -48,7 +48,6 @@ import {
 } from "../utils/maven-test-selection";
 
 const MAXIMUM_OUTPUT_CHARACTERS = 500_000;
-const MAXIMUM_DEPENDENCY_OUTPUT_CHARACTERS = 500_000;
 const MAVEN_DEPENDENCY_TIMEOUT_MILLISECONDS = 60_000;
 const MAVEN_TEST_TIMEOUT_MILLISECONDS = 120_000;
 const MAVEN_TEST_ALLOW_EMPTY_UPSTREAM_MODULES = "-Dsurefire.failIfNoSpecifiedTests=false";
@@ -366,6 +365,9 @@ export const createMavenStore = (
   let launchRevision = 0;
   let diagnosticsRevision = 0;
   let dependencyRevision = 0;
+  let dependencyOutputByteLimit = 0;
+  let dependencyOutputBytes = 0;
+  const dependencyOutputEncoder = new TextEncoder();
   let dependencyTimer: ReturnType<typeof setTimeout> | null = null;
   let testTimer: ReturnType<typeof setTimeout> | null = null;
   let testTimerSessionId: string | null = null;
@@ -1248,6 +1250,11 @@ export const createMavenStore = (
               releaseMavenSessionWorkspace(sessionId);
               return;
             }
+            if (!Number.isSafeInteger(plan.outputByteLimit) || (plan.outputByteLimit ?? 0) <= 0) {
+              throw new Error("Maven dependency launch plan is missing a valid output budget.");
+            }
+            dependencyOutputByteLimit = plan.outputByteLimit!;
+            dependencyOutputBytes = 0;
             dependencyTimer = dependencyScheduler.setTimer(
               () =>
                 failDependencySession(
@@ -1338,8 +1345,9 @@ export const createMavenStore = (
           ) {
             return;
           }
-          const output = (state.dependencyOutput + chunk).replace(/\r/g, "");
-          if (output.length > MAXIMUM_DEPENDENCY_OUTPUT_CHARACTERS) {
+          const normalizedChunk = chunk.replace(/\r/g, "");
+          const chunkBytes = dependencyOutputEncoder.encode(normalizedChunk).byteLength;
+          if (chunkBytes > dependencyOutputByteLimit - dependencyOutputBytes) {
             void failDependencySession(
               sessionId,
               state.activeDependencyModulePath,
@@ -1347,7 +1355,8 @@ export const createMavenStore = (
             );
             return;
           }
-          set({ dependencyOutput: output });
+          dependencyOutputBytes += chunkBytes;
+          set({ dependencyOutput: state.dependencyOutput + normalizedChunk });
         },
 
         finishDependencyProcess: async (sessionId, exitCode) => {

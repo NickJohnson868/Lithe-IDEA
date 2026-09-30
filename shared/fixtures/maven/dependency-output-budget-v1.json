@@ -1,0 +1,6 @@
+{
+  "outputByteLimit": 8388608,
+  "nodeCount": 6000,
+  "linePrefix": "[INFO] +- org.example.application.platform.dependencies:library-",
+  "lineSuffix": ":jar:1.0.0:compile (version managed from 0.9.0)\n"
+}

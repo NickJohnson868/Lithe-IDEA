@@ -52,7 +52,10 @@ import { ensureBufferInPane as ensureBufferInWorkspacePane } from "@/features/pa
 import { defaultSettings } from "@/features/settings/config/default-settings";
 import { useSettingsStore } from "@/features/settings/stores/settings.store";
 import { createTranslator } from "@/i18n/locale";
-import { cleanupBufferHistoryTracking, trackImmediateBufferHistoryChange } from "@/features/editor/stores/buffer-history-tracking";
+import {
+  cleanupBufferHistoryTracking,
+  trackImmediateBufferHistoryChange,
+} from "@/features/editor/stores/buffer-history-tracking";
 import type {
   EditorContent,
   MarkdownViewMode,
@@ -273,7 +276,10 @@ interface BufferActions {
     bufferId: string,
     operationId: string,
   ) => Promise<ExternalBufferChangeResult>;
-  resolveExternalConflict: (bufferId: string, resolution: "keepEditor" | "loadDisk") => Promise<void>;
+  resolveExternalConflict: (
+    bufferId: string,
+    resolution: "keepEditor" | "loadDisk",
+  ) => Promise<void>;
   setPendingClose: (pending: PendingClose | null) => void;
   confirmCloseWithoutSaving: () => void;
   cancelPendingClose: () => void;
@@ -305,7 +311,10 @@ function makeDocumentBufferOwner(
         bufferId,
         path: buffer.path,
         lifecycle: lifecycleStateForBuffer(buffer),
-        baseline: buffer.acknowledgedDiskContent === undefined ? buffer.savedContent : buffer.acknowledgedDiskContent,
+        baseline:
+          buffer.acknowledgedDiskContent === undefined
+            ? buffer.savedContent
+            : buffer.acknowledgedDiskContent,
         diskIdentity: buffer.diskIdentity,
         readEncoding: buffer.readEncoding ?? buffer.encoding,
         externalContent: buffer.externalDiskContent,
@@ -338,7 +347,12 @@ function makeDocumentBufferOwner(
     },
     replaceWithDiskContent: (content, details) => {
       const previous = getEditorBuffer();
-      if (previous) trackImmediateBufferHistoryChange({ bufferId, currentContent: previous.content, nextContent: content });
+      if (previous)
+        trackImmediateBufferHistoryChange({
+          bufferId,
+          currentContent: previous.content,
+          nextContent: content,
+        });
       mutateEditorBuffer((buffer) => {
         const revision = (buffer.contentRevision ?? 0) + 1;
         buffer.content = content;
@@ -1081,9 +1095,19 @@ const createBufferStore = (workspaceId: string) => {
             case "diagnostics":
             case "references":
             case "extensions": {
-              const existing = buffers.find((b) => b.type === spec.type);
+              const existing =
+                spec.type === "globalSearch" && spec.newTab
+                  ? undefined
+                  : buffers.find((b) => b.type === spec.type && (spec.type !== "globalSearch" || !b.isPinned));
               if (existing) {
                 set((state) => {
+                  if (spec.type === "globalSearch" && spec.searchSnapshot) {
+                    const target = state.buffers.find((buffer) => buffer.id === existing.id);
+                    if (target?.type === "globalSearch") {
+                      target.searchSnapshot = spec.searchSnapshot;
+                      target.name = `Find: ${spec.searchSnapshot.query.replace(/\n/g, " ")}`;
+                    }
+                  }
                   activateBufferInState(state, existing.id);
                 });
                 syncAndFocusBufferInPane(existing.id);

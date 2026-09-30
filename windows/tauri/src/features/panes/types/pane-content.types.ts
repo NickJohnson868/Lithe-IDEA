@@ -235,6 +235,7 @@ interface ExternalEditorContent extends PaneContentBase {
 
 interface GlobalSearchContent extends PaneContentBase {
   type: "globalSearch";
+  searchSnapshot?: import("@/features/global-search/types/global-search.types").TextSearchSnapshot;
 }
 
 interface DiagnosticsContent extends PaneContentBase {
@@ -471,6 +472,8 @@ export type OpenContentSpec =
     }
   | {
       type: "globalSearch";
+      searchSnapshot?: import("@/features/global-search/types/global-search.types").TextSearchSnapshot;
+      newTab?: boolean;
     }
   | {
       type: "diagnostics";

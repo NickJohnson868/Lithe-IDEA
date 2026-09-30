@@ -251,13 +251,16 @@
       },
       "windows": {
         "evidence": [
-          "windows/tauri/src/features/file-search"
+          "windows/tauri/src/features/file-search",
+          "windows/tauri/src/features/global-search",
+          "rust/lithe-core/src/project/files.rs",
+          ".agents/notes/implemented/feature/2026-09-25-windows-text-search-dialog.md"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"
       },
       "owner": "Search",
-      "verification": "使用同一项目和查询 fixture 对比命中路径、行号、列号和结果排序。"
+      "verification": "使用同一项目和查询 fixture 对比命中路径、行号、列号和结果排序；Windows 验证多行、掩码、取消与分页，大项目查询达到预算后不遍历后续目录。"
     },
     {
       "id": "search-global",
@@ -1255,7 +1258,9 @@
       "windows": {
         "evidence": [
           "windows/tauri/src/features/file-explorer",
-          "windows/tauri/src/features/sidebar"
+          "windows/tauri/src/features/sidebar",
+          "windows/tauri/src/features/file-explorer/stores/file-explorer-tree.store.test.ts",
+          "windows/tauri/vite.config.ts"
         ],
         "implementationStatus": "implemented",
         "verificationStatus": "pending"

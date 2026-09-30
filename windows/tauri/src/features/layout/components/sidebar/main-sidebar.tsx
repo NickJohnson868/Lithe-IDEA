@@ -14,7 +14,6 @@ import { flushSync } from "react-dom";
 import { FileExplorerPane } from "@/features/file-explorer/components/file-explorer-pane";
 import { useFileSystemStore } from "@/features/file-system/stores/file-system.store";
 import GitView from "@/features/git/components/git-view";
-import GlobalSearchBuffer from "@/features/global-search/components/global-search-buffer";
 import { SidebarPaneSelector } from "@/features/layout/components/sidebar/sidebar-pane-selector";
 import { SidebarProjectDots } from "@/features/layout/components/sidebar/sidebar-projects";
 import { useSidebarPaneController } from "@/features/layout/hooks/use-sidebar-pane-controller";
@@ -31,7 +30,7 @@ import {
   type SidebarActivityItemId,
 } from "@/features/layout/config/item-order";
 import {
-  openGlobalSearchSidebar,
+  openGlobalSearch,
   toggleDiagnosticsPane,
 } from "@/features/layout/actions/workbench-tool-window-actions";
 import { RunIcon } from "@/features/run/components/run-icon";
@@ -122,6 +121,7 @@ export const SidebarActivityRail = memo(({ expanded = false }: SidebarActivityRa
   const activeSidebarView = useUIState((state) => state.activeSidebarView);
   const setIsProjectPickerVisible = useUIState((state) => state.setIsProjectPickerVisible);
   const openSettingsDialog = useUIState((state) => state.openSettingsDialog);
+  const isGlobalSearchVisible = useUIState((state) => state.isGlobalSearchVisible);
   const isBottomPaneVisible = useUIState((state) => state.isBottomPaneVisible);
   const bottomPaneActiveTab = useUIState((state) => state.bottomPaneActiveTab);
   const configuredActivityRailWidth = useSettingsStore((state) => state.settings.activityRailWidth);
@@ -172,7 +172,8 @@ export const SidebarActivityRail = memo(({ expanded = false }: SidebarActivityRa
   const switchToProject = useFileSystemStore((state) => state.switchToProject);
   const isSwitchingProject = useFileSystemStore((state) => state.isSwitchingProject);
   const handleSidebarViewChange = (view: typeof activeSidebarView) => {
-    openSidebarView(view);
+    if (view === "search") openGlobalSearch();
+    else openSidebarView(view);
   };
 
   const activityRailVisibilityItems = useMemo(() => {
@@ -618,9 +619,7 @@ export const SidebarActivityRail = memo(({ expanded = false }: SidebarActivityRa
                   coreFeatures={coreFeatures}
                   onViewChange={handleSidebarViewChange}
                   onSearchClick={() => handleSidebarViewChange("search")}
-                  isSearchActive={
-                    isSidebarVisible && !isGitViewActive && activeSidebarView === "search"
-                  }
+                  isSearchActive={isGlobalSearchVisible}
                   onGitLogClick={() => toggleGitLogPane()}
                   isGitLogActive={isBottomPaneVisible && bottomPaneActiveTab === "gitLog"}
                   onSettingsClick={() => openSettingsDialog()}
@@ -694,7 +693,7 @@ export const SidebarActivityRail = memo(({ expanded = false }: SidebarActivityRa
             <FolderOpenIcon />
             {t("welcome.openProject")}
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => openGlobalSearchSidebar()}>
+          <ContextMenuItem onClick={() => openGlobalSearch()}>
             <MagnifyingGlassIcon />
             {t("workbench.search")}
           </ContextMenuItem>
@@ -774,21 +773,13 @@ export const MainSidebar = memo(({ activeView, isGitActive }: MainSidebarProps) 
       id: "files",
       content: <FileExplorerPane />,
     },
-    ...(coreFeatures.search
-      ? [
-          {
-            id: "search" as const,
-            content: <GlobalSearchBuffer compact />,
-          },
-        ]
-      : []),
   ];
   const paneEntries = allPaneEntries;
   const activePane = (() => {
     const requestedIndex = paneEntries.findIndex((pane) => pane.id === activePaneId);
     if (requestedIndex >= 0) return paneEntries[requestedIndex];
 
-    return paneEntries[0] ?? null;
+    return paneEntries.find((pane) => pane.id === "files") ?? null;
   })();
   return (
     <div className="flex h-full min-h-0" data-external-file-drop-scope="sidebar">

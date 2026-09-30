@@ -9,6 +9,7 @@ interface ModalState {
   commandPaletteInitialView: CommandPaletteViewId;
   isAgentLauncherVisible: boolean;
   isGlobalSearchVisible: boolean;
+  globalSearchRequest: number;
   isSettingsDialogVisible: boolean;
   isBranchManagerVisible: boolean;
   isProjectPickerVisible: boolean;
@@ -50,6 +51,7 @@ export const createModalSlice: StateCreator<ModalSlice, [], [], ModalSlice> = (s
   commandPaletteInitialView: "root",
   isAgentLauncherVisible: false,
   isGlobalSearchVisible: false,
+  globalSearchRequest: 0,
   isSettingsDialogVisible: false,
   isBranchManagerVisible: false,
   isProjectPickerVisible: false,
@@ -187,6 +189,7 @@ export const createModalSlice: StateCreator<ModalSlice, [], [], ModalSlice> = (s
     if (v) {
       set({
         isGlobalSearchVisible: true,
+        globalSearchRequest: get().globalSearchRequest + 1,
         isQuickOpenVisible: false,
         isCommandPaletteVisible: false,
         isAgentLauncherVisible: false,

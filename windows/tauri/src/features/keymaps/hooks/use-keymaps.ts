@@ -35,7 +35,12 @@ const CHORD_TIMEOUT = 1000; // 1 second to complete chord
 const CLOSE_TAB_CLOSE_REQUEST_WINDOW_MS = 1000;
 const closeTabShortcut = parseKeybinding("cmd+w").parts[0];
 const closeWindowShortcut = parseKeybinding("cmd+shift+w").parts[0];
-const INPUT_ALLOWED_COMMANDS = new Set(["file.quickOpen", "workbench.commandPalette"]);
+const INPUT_ALLOWED_COMMANDS = new Set([
+  "file.quickOpen",
+  "workbench.commandPalette",
+  "workbench.showGlobalSearch",
+  "workbench.showProjectSearch",
+]);
 
 function isCloseTabShortcut(event: KeyboardEvent) {
   return keysMatch(eventToKey(event), closeTabShortcut);

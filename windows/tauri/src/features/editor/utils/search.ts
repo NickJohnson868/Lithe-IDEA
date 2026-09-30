@@ -35,11 +35,11 @@ export function buildSearchRegex(query: string, options: SearchOptions): RegExp 
 
   // Wrap with word boundaries if whole word matching
   if (options.wholeWord) {
-    pattern = `\\b${pattern}\\b`;
+    pattern = `\\b(?:${pattern})\\b`;
   }
 
   // Build flags
-  const flags = options.caseSensitive ? "g" : "gi";
+  const flags = options.caseSensitive ? "gm" : "gmi";
 
   try {
     return new RegExp(pattern, flags);

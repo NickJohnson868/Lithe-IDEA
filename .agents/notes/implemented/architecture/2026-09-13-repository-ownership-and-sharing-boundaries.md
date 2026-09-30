@@ -22,6 +22,15 @@ C 符号、模块 ID、能力 ID 或插件入口名称。
 macOS 是当前参考产品。Windows 是独立的 React/Tauri 实现，不得导入
 Swift 源码，也不得依赖 macOS 类型。
 
+Windows 前端配置必须保留依赖包的 ESM 导出条件。不能把 `zustand` 整包
+或全部子路径映射到磁盘目录，否则其中间件
+可能加载 CommonJS（另一种 JavaScript 模块格式）版本，并与应用中的 Immer
+形成两份插件状态。Vite 使用 `dedupe` 保持 Zustand/Immer 的单实例，文件树
+Set 的更新与应用 `enableMapSet()` 必须落在同一实例。仓库外层插件因 Bun
+隔离依赖布局而需要类型定位时，只为它实际使用的 `zustand/react/shallow`
+提供专用类型定位；这个无 Immer 依赖的子路径不改变中间件解析，不能恢复
+覆盖全部子路径的规则。
+
 仓库采用以下所有权边界：
 
 | 路径 | 职责 |

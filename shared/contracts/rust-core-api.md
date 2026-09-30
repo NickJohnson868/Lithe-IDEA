@@ -916,7 +916,16 @@ are one-based and author timestamps are Unix seconds.
 `workspace.search` accepts `maxResults` for a total result cap. Callers that
 need separate buckets may also provide `maxFileResults` and
 `maxContentResults`; each category is capped independently and the total cap
-still applies.
+still applies. Text-only requests (`maxFileResults: 0`) scan visible files
+without first constructing the Java symbol index. They preserve deterministic
+traversal order and stop reading once their result budget is filled.
+`fileMask` accepts comma-separated `*` and `?` patterns against file names;
+patterns prefixed with `!` exclude matching names after positive masks are applied.
+An exclusion-only list includes every other name. Queries containing line breaks
+(or regex `\n`) match normalized LF/CRLF text across lines; `line` is the first
+matched line and `preview` includes the complete matched lines. Ordinary queries
+continue to return one result per matching line. Query whitespace is significant,
+although all-whitespace queries return no results.
 
 `workspace.searchEverywhere` uses the same query options and visibility fields,
 and additionally accepts `maxSymbolResults`. Results are ordered as file,
@@ -1509,9 +1518,14 @@ expand or duplicate that file's arguments. Fixtures are in
 and optional reactor-relative `module`. It returns a launch plan for the fixed
 `maven-dependency-plugin:3.8.1:tree` goal with verbose text output, disabled
 color, and an English locale. Module queries use `-pl <module>` without `-am`;
-the read-only query does not build reactor dependencies. Platform adapters own
+an omitted or `.` module uses `-pl .` to select only the reactor root. The
+read-only query does not build reactor dependencies. Platform adapters own
 the child process, apply a bounded timeout, and keep it independent from an
-ordinary Maven build session.
+ordinary Maven build session. Dependency plans additionally return
+`outputByteLimit` (8,388,608 UTF-8 bytes); ordinary build plans omit it. Windows
+enforces this Core-owned budget incrementally before appending output, after
+removing carriage returns. It stops the process and fails the query on overflow
+rather than parsing a truncated tree. macOS capture behavior is unchanged.
 
 `maven.dependencies` accepts `{ "modulePath": string, "output": string }` and
 returns the normalized module path plus a recursively nested `dependencies`
@@ -1519,10 +1533,13 @@ array. Each node contains `modulePath`, `groupId`, `artifactId`, `version`,
 `type`, nullable `classifier`, `scope`, `resolution`, nullable
 `selectedVersion`, and `children`. Resolution is `resolved`,
 `omittedDuplicate`, or `omittedConflict`. Core removes ANSI control sequences
-and unrelated Maven log lines, then sorts every level deterministically. Input
-is limited to 500,000 Unicode scalar values, 10,000 dependency nodes, and 64
+and unrelated Maven log lines, supports a single mvnd module log prefix, and
+sorts every level deterministically. Mixed module prefixes and malformed tree
+lines fail rather than becoming empty or incomplete results. Input
+is limited to 8,388,608 UTF-8 bytes, 10,000 dependency nodes, and 64
 levels; malformed or excessive output returns `parse_failed`. The compatibility
-fixture is `shared/fixtures/maven/dependency-tree-v1.json`.
+fixtures are `shared/fixtures/maven/dependency-tree-v1.json` and the generated
+large-tree recipe `shared/fixtures/maven/dependency-output-budget-v1.json`.
 
 `maven.diagnostics` accepts `{ "root": string, "output": string }` and returns
 `{ "issues": [] }`. Diagnostic paths may be absolute or workspace-relative;

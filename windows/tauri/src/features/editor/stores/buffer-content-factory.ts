@@ -230,6 +230,16 @@ export const createPaneContent = (id: string, spec: OpenContentSpec): PaneConten
         terminalConnectionId: spec.terminalConnectionId,
       };
     case "globalSearch":
+      return {
+        ...base,
+        type: "globalSearch",
+        path: SINGLETON_TOOL_BUFFER_METADATA.globalSearch.path,
+        name: spec.searchSnapshot
+          ? `Find: ${spec.searchSnapshot.query.replace(/\n/g, " ")}`
+          : SINGLETON_TOOL_BUFFER_METADATA.globalSearch.name,
+        isPreview: false,
+        searchSnapshot: spec.searchSnapshot,
+      };
     case "diagnostics":
     case "references":
     case "extensions": {

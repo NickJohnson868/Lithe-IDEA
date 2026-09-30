@@ -92,6 +92,65 @@ pub(crate) fn get_or_build(root: &Path, rules: &VisibilityRules) -> Result<Share
     Ok(index)
 }
 
+/// Lists visible paths without building content postings or Java symbol data.
+/// Plain text search can stop reading as soon as its result budget is filled.
+pub(crate) fn visible_paths(
+    root: &Path,
+    rules: &VisibilityRules,
+) -> Result<Vec<String>, CoreError> {
+    let mut files = Vec::new();
+    collect_files(root, root, rules, &mut files)?;
+    Ok(files.iter().map(|path| relative_path(path, root)).collect())
+}
+
+/// Depth-first visible file traversal that opens each directory only on demand.
+pub(crate) struct VisibleFiles<'a> {
+    root: &'a Path,
+    rules: &'a VisibilityRules,
+    /// Sorted siblings waiting at each depth; no descendant tree is preloaded.
+    stack: Vec<std::vec::IntoIter<(PathBuf, bool)>>,
+}
+
+/// Starts a cancellable traversal without reading file contents or symbols.
+pub(crate) fn visible_files<'a>(
+    root: &'a Path,
+    rules: &'a VisibilityRules,
+) -> Result<VisibleFiles<'a>, CoreError> {
+    Ok(VisibleFiles {
+        root,
+        rules,
+        stack: vec![sorted_children(root, root, rules)?.into_iter()],
+    })
+}
+
+impl Iterator for VisibleFiles<'_> {
+    type Item = Result<String, CoreError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Err(error) = crate::protocol::cancellation::check() {
+                self.stack.clear();
+                return Some(Err(error));
+            }
+            let siblings = self.stack.last_mut()?;
+            let Some((path, is_directory)) = siblings.next() else {
+                self.stack.pop();
+                continue;
+            };
+            if !is_directory {
+                return Some(Ok(relative_path(&path, self.root)));
+            }
+            match sorted_children(self.root, &path, self.rules) {
+                Ok(children) => self.stack.push(children.into_iter()),
+                Err(error) => {
+                    self.stack.clear();
+                    return Some(Err(error));
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn invalidate_root(root: &Path) {
     let Ok(mut indexes) = cache().lock() else {
         return;
@@ -364,6 +423,21 @@ fn collect_files(
     rules: &VisibilityRules,
     files: &mut Vec<PathBuf>,
 ) -> Result<(), CoreError> {
+    for (child, is_directory) in sorted_children(root, path, rules)? {
+        if is_directory {
+            collect_files(root, &child, rules, files)?;
+        } else {
+            files.push(child);
+        }
+    }
+    Ok(())
+}
+
+fn sorted_children(
+    root: &Path,
+    path: &Path,
+    rules: &VisibilityRules,
+) -> Result<Vec<(PathBuf, bool)>, CoreError> {
     crate::protocol::cancellation::check()?;
     let mut children = fs::read_dir(path)
         .map_err(CoreError::from)?
@@ -398,14 +472,7 @@ fn collect_files(
                 )
         })
     });
-    for (child, is_directory) in children {
-        if is_directory {
-            collect_files(root, &child, rules, files)?;
-        } else {
-            files.push(child);
-        }
-    }
-    Ok(())
+    Ok(children)
 }
 
 fn read_search_data(path: &Path, relative: &str) -> (Vec<u32>, Vec<IndexedSymbol>) {

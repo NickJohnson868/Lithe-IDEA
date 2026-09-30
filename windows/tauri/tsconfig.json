@@ -23,7 +23,7 @@
       "@tauri-apps/plugin-http": ["./node_modules/@tauri-apps/plugin-http"],
       "react": ["./node_modules/@types/react"],
       "react/*": ["./node_modules/@types/react/*"],
-      "zustand/*": ["./node_modules/zustand/*"],
+      "zustand/react/shallow": ["./node_modules/zustand/react/shallow"],
       "@lithe/editor/*": ["../../frontend/editor/src/*"],
       "monaco-editor": ["./node_modules/monaco-editor"],
       "monaco-editor/*": ["./node_modules/monaco-editor/*"]

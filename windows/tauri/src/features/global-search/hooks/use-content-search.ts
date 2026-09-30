@@ -16,6 +16,7 @@ import { mergeSearchResults } from "../utils/content-search-results";
 import { createPathFilterPredicate } from "../utils/path-filters";
 import { useFileSystemStore } from "@/features/file-system/stores/file-system.store";
 import { useGlobalSearchStore } from "../stores/global-search.store";
+import { filterSearchContext } from "../services/search-context";
 
 export type { ContentSearchOptions } from "../types/global-search.types";
 
@@ -116,6 +117,8 @@ export const useContentSearch = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [debouncedIncludeQuery] = useDebounce(includeQuery, SEARCH_DEBOUNCE_DELAY);
   const [debouncedExcludeQuery] = useDebounce(excludeQuery, SEARCH_DEBOUNCE_DELAY);
+  const nativeRequestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => nativeRequestRef.current?.abort(), [query, rootFolderPath]);
   const providerFileCacheRef = useRef<ProviderFileCache | null>(null);
   const providerSearchSessionRef = useRef<ProviderSearchSession | null>(null);
   const availability = getSearchAvailability(rootFolderPath);
@@ -129,6 +132,8 @@ export const useContentSearch = () => {
         Number(searchOptions.caseSensitive),
         Number(searchOptions.wholeWord),
         Number(searchOptions.useRegex),
+        searchOptions.fileMask ?? "",
+        searchOptions.context ?? "anywhere",
       ].join("\0"),
     [
       debouncedExcludeQuery,
@@ -139,6 +144,8 @@ export const useContentSearch = () => {
       searchOptions.caseSensitive,
       searchOptions.useRegex,
       searchOptions.wholeWord,
+      searchOptions.fileMask,
+      searchOptions.context,
     ],
   );
   const isSearchPending =
@@ -198,7 +205,7 @@ export const useContentSearch = () => {
         });
       }
 
-      return searchFilesContent({
+      const response = await searchFilesContent({
         root_paths: nativeRootPaths,
         query: debouncedQuery,
         case_sensitive: searchOptions.caseSensitive,
@@ -207,7 +214,14 @@ export const useContentSearch = () => {
         max_results: CONTENT_SEARCH_PAGE_SIZE,
         file_offset: fileOffset,
         context_lines: CONTEXT_LINES,
+        signal: nativeRequestRef.current?.signal,
+        file_mask: searchOptions.fileMask,
       });
+      return filterSearchContext(
+        response,
+        searchOptions.context,
+        () => !searchActions.isCurrentRequest(currentRequestId),
+      );
     },
     [
       availability,
@@ -230,7 +244,9 @@ export const useContentSearch = () => {
         debouncedIncludeQuery,
         debouncedExcludeQuery,
       );
-      const shouldSkipEmptyPages = hasPathFilters(debouncedIncludeQuery, debouncedExcludeQuery);
+      const shouldSkipEmptyPages =
+        hasPathFilters(debouncedIncludeQuery, debouncedExcludeQuery) ||
+        (searchOptions.context && searchOptions.context !== "anywhere");
       let response: SearchFilesResponse | null = null;
       let nextOffset = fileOffset;
 
@@ -267,6 +283,7 @@ export const useContentSearch = () => {
       requestSearchPage,
       rootFolderPath,
       searchActions,
+      searchOptions.context,
     ],
   );
 
@@ -283,6 +300,8 @@ export const useContentSearch = () => {
 
       if (!force && resultsSearchKey === searchKey) return;
 
+      nativeRequestRef.current?.abort();
+      nativeRequestRef.current = new AbortController();
       const currentRequestId = searchActions.beginSearch();
       setIsSearching(true);
       setIsLoadingMore(false);
@@ -462,5 +481,6 @@ export const useContentSearch = () => {
     setExcludeQuery: searchActions.setExcludeQuery,
     refreshSearch,
     loadMoreResults,
+    nextFileOffset,
   };
 };

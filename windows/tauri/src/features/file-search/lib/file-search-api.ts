@@ -1,3 +1,9 @@
+import {
+  DEFAULT_HIDDEN_DIRECTORY_PATTERNS,
+  DEFAULT_HIDDEN_FILE_PATTERNS,
+} from "@/features/settings/config/default-settings";
+import { executeContentSearch } from "./content-search-operation";
+import { buildSearchRegex, findAllMatches } from "@/features/editor/utils/search";
 import { executeCore } from "@/core/lithe-core-client";
 import { getFilenameFromPath } from "@/features/file-system/controllers/file-utils";
 import { joinPath } from "@/utils/path-helpers";
@@ -45,6 +51,8 @@ export interface SearchFilesRequest {
   max_results?: number;
   file_offset?: number;
   context_lines?: number;
+  signal?: AbortSignal;
+  file_mask?: string;
 }
 
 export interface FffSearchHit {
@@ -81,16 +89,18 @@ interface CoreWorkspaceNode {
 
 function coreData<T>(response: Awaited<ReturnType<typeof executeCore<T>>>): T {
   if (response.ok) return response.data;
-  throw new Error(response.error.message);
+  throw Object.assign(new Error(response.error.message), { code: response.error.code });
 }
 
 export async function searchFilesContent(
   request: SearchFilesRequest,
 ): Promise<SearchFilesResponse> {
   const maxResults = request.max_results ?? 500;
+  const offset = request.file_offset ?? 0;
+  const nativeLimit = Math.min(10_000, offset + maxResults + 1);
   const responses = await Promise.all(
     request.root_paths.map(async (root) => {
-      const response = await executeCore<{ matches: CoreSearchMatch[] }>(
+      const response = await executeContentSearch<{ matches: CoreSearchMatch[] }>(
         {
           id: crypto.randomUUID(),
           command: "workspace.search",
@@ -100,19 +110,36 @@ export async function searchFilesContent(
             caseSensitive: request.case_sensitive ?? false,
             wholeWords: request.whole_word ?? false,
             regularExpression: request.use_regex ?? false,
-            maxResults,
-            fileMask: "",
+            maxResults: nativeLimit,
+            // This entry point searches content; file-name hits must not consume its budget.
+            maxFileResults: 0,
+            hiddenDirectoryNames: [...DEFAULT_HIDDEN_DIRECTORY_PATTERNS, ".lithe"],
+            hiddenFilePatterns: [...DEFAULT_HIDDEN_FILE_PATTERNS],
+            fileMask: request.file_mask ?? "",
           },
         },
+        request.signal,
       );
       return { root, matches: coreData(response).matches };
     }),
   );
 
   const grouped = new Map<string, FileSearchResult>();
+  const expression = buildSearchRegex(request.query, {
+    caseSensitive: request.case_sensitive ?? false,
+    wholeWord: request.whole_word ?? false,
+    useRegex: request.use_regex ?? false,
+  });
+  let contentIndex = 0;
+  let hasMore = false;
   for (const { root, matches } of responses) {
     for (const match of matches) {
       if (match.kind !== "content") continue;
+      if (contentIndex++ < offset) continue;
+      if (contentIndex > offset + maxResults) {
+        hasMore = true;
+        continue;
+      }
       const filePath = joinPath(root, match.path);
       const result = grouped.get(filePath) ?? {
         file_path: filePath,
@@ -120,17 +147,14 @@ export async function searchFilesContent(
         total_matches: 0,
       };
       const lineContent = match.preview;
-      const columnStart = Math.max(
-        0,
-        request.case_sensitive
-          ? lineContent.indexOf(request.query)
-          : lineContent.toLocaleLowerCase().indexOf(request.query.toLocaleLowerCase()),
-      );
+      const ranges = expression ? findAllMatches(lineContent, expression, 10_000) : [];
+      const columnStart = ranges[0]?.start ?? 0;
       result.matches.push({
         line_number: match.line ?? 1,
         line_content: lineContent,
         column_start: columnStart,
-        column_end: columnStart + request.query.length,
+        column_end: ranges[0]?.end ?? columnStart,
+        match_ranges: ranges,
       });
       result.total_matches += 1;
       grouped.set(filePath, result);
@@ -144,8 +168,8 @@ export async function searchFilesContent(
     searched_files: results.length,
     searchable_files: results.length,
     files_with_matches: results.length,
-    next_file_offset: results.length,
-    has_more: grouped.size > results.length,
+    next_file_offset: hasMore ? offset + maxResults : 0,
+    has_more: hasMore && offset + maxResults < 10_000,
     is_indexing: false,
     indexed_files: results.length,
   };

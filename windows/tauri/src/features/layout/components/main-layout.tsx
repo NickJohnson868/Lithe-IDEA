@@ -59,6 +59,7 @@ const ProjectNameMenu = lazy(() =>
     default: module.ProjectNameMenu,
   })),
 );
+const GlobalSearchDialog = lazy(() => import("@/features/global-search/components/global-search-dialog"));
 const QuickOpen = lazy(() => import("@/features/quick-open/components/quick-open"));
 const WindowCloseGuard = lazy(() =>
   import("@/features/window/components/window-close-guard").then((module) => ({
@@ -363,6 +364,7 @@ export function MainLayout() {
       {deferredSurfacesReady ? (
         <Suspense fallback={null}>
           <QuickOpen />
+          <GlobalSearchDialog />
           <CommandPalette />
           <ProjectNameMenu />
 

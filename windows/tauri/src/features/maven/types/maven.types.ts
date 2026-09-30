@@ -57,6 +57,8 @@ export interface MavenLaunchContext {
 }
 
 export interface MavenLaunchPlan {
+  /** Core-owned UTF-8 capture budget, present for dependency queries. */
+  outputByteLimit?: number;
   version: 1;
   executable: { toolchain: "project-maven" };
   arguments: string[];
